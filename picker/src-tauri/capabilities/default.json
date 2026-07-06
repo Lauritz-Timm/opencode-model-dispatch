@@ -1,5 +1,4 @@
 {
-  "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Allow dev preview launcher windows to create and focus fixture preview windows.",
   "windows": ["main", "preview-*"],
