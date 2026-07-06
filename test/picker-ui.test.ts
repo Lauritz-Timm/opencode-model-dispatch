@@ -22,7 +22,7 @@ import {
 import { cssVariables, themeTokens } from "../picker/src/theme"
 import { resolveOpenCodeThemeCss } from "../picker/src/opencode-theme-resolver"
 import { modelSelectionInputFromPickerRequest, resolvePickerRuntimeData, resolvePickerThemeHint } from "../picker/src/runtime-request"
-import { createPickerRuntimeAdapter } from "../picker/src/runtime-rpc"
+import { createPickerRuntimeAdapter, pickerRuntimeRequestFromLine } from "../picker/src/runtime-rpc"
 
 const models = [
   { providerID: "anthropic", providerName: "Anthropic", modelID: "claude-sonnet-4", displayName: "Claude Sonnet 4" },
@@ -326,6 +326,39 @@ describe("picker theme bridge", () => {
     expect(resolvePickerRuntimeData(new URLSearchParams("preview=1"), undefined, fixture)).toEqual(fixture)
     expect(resolvePickerRuntimeData(new URLSearchParams(), { modelSelection: { tasks, models } }, fixture)).toEqual({
       modelSelection: { tasks, models },
+    })
+  })
+
+  test("preview mode uses fixture model data instead of runtime IPC data", () => {
+    const fixture = {
+      theme: { themeID: "nightowl", colorScheme: "dark" },
+      modelSelection: { tasks, models },
+      setup: { settings: defaultSetupSettings(), scope: "project" as const },
+    }
+    const runtimeRequest = {
+      theme: { themeID: "material", colorScheme: "light" },
+      modelSelection: {
+        tasks: [{ id: "runtime-task", agentType: "runtime", description: "Runtime IPC task" }],
+        models: [{ providerID: "runtime", providerName: "Runtime", modelID: "model", displayName: "Runtime Model" }],
+      },
+    }
+
+    expect(resolvePickerRuntimeData(new URLSearchParams("preview=1&view=models"), runtimeRequest, fixture)).toEqual(fixture)
+    expect(resolvePickerRuntimeData(new URLSearchParams("preview=1&view=settings"), runtimeRequest, fixture)).toEqual(fixture)
+  })
+
+  test("runtime IPC theme beats preview fixture theme when URL has no theme override", () => {
+    const runtimeRequest = pickerRuntimeRequestFromLine(JSON.stringify({
+      jsonrpc: "2.0",
+      method: "start",
+      params: {
+        theme: { themeID: "material", colorScheme: "light" },
+      },
+    }))
+
+    expect(resolvePickerThemeHint(new URLSearchParams("preview=1"), runtimeRequest, { themeID: "nightowl", colorScheme: "dark" })).toEqual({
+      themeID: "material",
+      colorScheme: "light",
     })
   })
 
