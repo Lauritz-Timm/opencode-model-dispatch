@@ -28,17 +28,26 @@
       "import": "./dist/index.js"
     }
   },
+  "bin": {
+    "opencode-model-dispatch-picker": "./bin/picker.js"
+  },
   "files": [
     "dist",
+    "bin",
+    "scripts",
     "docs",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:picker": "bun run scripts/build-picker.ts",
+    "check:packaging": "bun run scripts/check-packaging.ts",
+    "coverage": "bun test --coverage --coverage-reporter=lcov",
+    "check:coverage": "bun run coverage && bun run scripts/check-coverage.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "bun test",
-    "prepublishOnly": "bun run build"
+    "prepublishOnly": "bun run build && bun run check:packaging"
   },
   "peerDependencies": {
     "@opencode-ai/plugin": "*"

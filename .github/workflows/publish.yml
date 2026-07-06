@@ -1,0 +1,64 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  npm:
+    name: Publish npm package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: bun run check:packaging
+      - run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  picker-assets:
+    name: Picker asset ${{ matrix.platform }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            arch: x64
+            ext: ""
+            runner: ubuntu-latest
+          - platform: macos
+            arch: arm64
+            ext: ""
+            runner: macos-latest
+          - platform: windows
+            arch: x64
+            ext: ".exe"
+            runner: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun install
+        working-directory: picker
+      - run: bun run build:picker
+      - name: Upload picker release asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          asset="picker-${{ matrix.platform }}-${{ matrix.arch }}${{ matrix.ext }}"
+          test -f "dist-picker/$asset"
+          gh release upload "${GITHUB_REF_NAME}" "dist-picker/$asset" --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}

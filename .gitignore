@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-picker/
 coverage/
 docs/plan.md
 docs/spec.md
