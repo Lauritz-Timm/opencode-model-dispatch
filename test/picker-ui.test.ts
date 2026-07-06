@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 
 import {
   applyModelSelectionAction,
+  buildModelSelectionSubmitParams,
   createModelSelectionState,
   filteredModelGroups,
   modelSelectionSubmitDisabled,
@@ -114,6 +115,24 @@ describe("picker model selection reducer", () => {
     const dropdown = applyModelSelectionAction(rowFocused, { type: "openDropdown", target: "task-a" })
     expect(applyModelSelectionAction(dropdown, { type: "key", key: "Escape", shift: true }).dropdown.openFor).toBeUndefined()
     expect(applyModelSelectionAction(rowFocused, { type: "key", key: "ArrowUp" }).focus).toBe("apply-to-all")
+  })
+
+  test("builds backend submit params from task selections in row order", () => {
+    const ready = applyModelSelectionAction(
+      applyModelSelectionAction(modelState(), {
+        type: "selectModel",
+        target: "task-b",
+        model: { providerID: "anthropic", modelID: "claude-opus-4" },
+      }),
+      { type: "selectModel", target: "task-a", model: { providerID: "openai", modelID: "gpt-4.1" } },
+    )
+
+    expect(buildModelSelectionSubmitParams(ready)).toEqual({
+      selections: [
+        { taskID: "task-a", providerID: "openai", modelID: "gpt-4.1" },
+        { taskID: "task-b", providerID: "anthropic", modelID: "claude-opus-4" },
+      ],
+    })
   })
 })
 
@@ -243,6 +262,22 @@ describe("picker theme bridge", () => {
 
     stop()
     expect(received).toContain("unlisten")
+  })
+
+  test("runtime adapter writes submit and cancel notifications to picker stdout", async () => {
+    const written: string[] = []
+    const adapter = createPickerRuntimeAdapter({
+      listen: async () => () => undefined,
+      writeStdoutLine: async (line) => written.push(line),
+    })
+
+    await adapter.submit({ selections: [{ taskID: "task-a", providerID: "openai", modelID: "gpt-4.1" }] })
+    await adapter.cancel()
+
+    expect(decodeNdjson(`${written[0]}\n${written[1]}\n`)).toEqual([
+      { jsonrpc: "2.0", method: "submit", params: { selections: [{ taskID: "task-a", providerID: "openai", modelID: "gpt-4.1" }] } },
+      { jsonrpc: "2.0", method: "cancel" },
+    ])
   })
 
   test("converts backend picker request catalog rows into model-selection UI input", () => {

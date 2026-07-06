@@ -1,4 +1,5 @@
 import { encodeJsonRpc, type JsonRpcMessage } from "./protocol"
+import type { ModelSelectionSubmitParams } from "./model-selection-reducer"
 import { modelSelectionInputFromPickerRequest, type BackendPickerRequestInput, type PickerRuntimeRequest, type PickerSetupInput, type PickerThemeHint } from "./runtime-request"
 
 const PICKER_RPC_EVENT = "picker-rpc-message"
@@ -14,6 +15,8 @@ export interface PickerRuntimeAdapterDependencies {
 
 export interface PickerRuntimeAdapter {
   start: (onStart: (request: PickerRuntimeRequest) => void) => Promise<RuntimeUnlisten>
+  submit: (params: ModelSelectionSubmitParams) => Promise<void>
+  cancel: () => Promise<void>
 }
 
 export function createPickerRuntimeAdapter(dependencies: PickerRuntimeAdapterDependencies): PickerRuntimeAdapter {
@@ -27,6 +30,12 @@ export function createPickerRuntimeAdapter(dependencies: PickerRuntimeAdapterDep
 
       await dependencies.writeStdoutLine(encodeJsonRpc({ jsonrpc: "2.0", method: "ready" }).trimEnd())
       return unlisten
+    },
+    async submit(params) {
+      await dependencies.writeStdoutLine(encodeJsonRpc({ jsonrpc: "2.0", method: "submit", params }).trimEnd())
+    },
+    async cancel() {
+      await dependencies.writeStdoutLine(encodeJsonRpc({ jsonrpc: "2.0", method: "cancel" }).trimEnd())
     },
   }
 }

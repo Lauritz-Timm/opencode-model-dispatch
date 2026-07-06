@@ -27,6 +27,10 @@ export interface ModelSelectionCommand {
   type: "submit" | "cancel"
 }
 
+export interface ModelSelectionSubmitParams {
+  selections: Array<{ taskID: string; providerID: string; modelID: string }>
+}
+
 export interface ModelSelectionState {
   rows: PickerRow[]
   rowOrder: string[]
@@ -101,6 +105,16 @@ export function filteredModelGroups(state: ModelSelectionState) {
 export function modelSelectionSubmitDisabled(state: ModelSelectionState): boolean {
   if (Object.keys(state.validationErrors).length > 0) return true
   return state.rows.some((row) => state.selections[row.id] === undefined)
+}
+
+export function buildModelSelectionSubmitParams(state: ModelSelectionState): ModelSelectionSubmitParams {
+  return {
+    selections: state.rows.map((row) => ({
+      taskID: row.id,
+      providerID: state.selections[row.id]!.providerID,
+      modelID: state.selections[row.id]!.modelID,
+    })),
+  }
 }
 
 function selectModel(state: ModelSelectionState, target: string, model: ModelRef): ModelSelectionState {

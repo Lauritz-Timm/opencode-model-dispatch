@@ -2,12 +2,12 @@
   import { onMount } from "svelte"
   import { WebviewWindow } from "@tauri-apps/api/webviewWindow"
   import { getCurrentWindow } from "@tauri-apps/api/window"
-  import { createModelSelectionState, filteredModelGroups } from "./model-selection-reducer"
+  import { buildModelSelectionSubmitParams, createModelSelectionState, filteredModelGroups, modelSelectionSubmitDisabled, type ModelRef } from "./model-selection-reducer"
   import { createSetupState } from "./setup-reducer"
   import { resolveOpenCodeThemeCss } from "./opencode-theme-resolver"
   import { cssVariables, resolveTheme, themeTokens } from "./theme"
   import { getPickerRuntimeRequest, resolvePickerRuntimeData, resolvePickerThemeHint, type PickerPreviewFixture } from "./runtime-request"
-  import { createTauriPickerRuntimeAdapter } from "./runtime-rpc"
+  import { createTauriPickerRuntimeAdapter, type PickerRuntimeAdapter } from "./runtime-rpc"
   import NumberRow from "./NumberRow.svelte"
   import ToggleRow from "./ToggleRow.svelte"
 
@@ -31,6 +31,7 @@
   $: windowTitle = isDevPreview && !isPreviewWindow ? "Model Dispatch" : activeView === "settings" ? "Model Dispatch Settings" : "Model Dispatch"
   $: modelOptions = modelSelection?.models ?? []
   let selectedModels: Record<string, string> = {}
+  let runtimeAdapter: PickerRuntimeAdapter | undefined
   $: dispatchEnabled = setupState.settings.dispatch.enabled
   $: privacyLoggingEnabled = setupState.settings.privacy.loggingEnabled
   $: batchMs = setupState.settings.dispatch.batchMs
@@ -43,9 +44,50 @@
     }
     if (isDevPreview) return
 
-    const adapter = await createTauriPickerRuntimeAdapter()
-    return await adapter.start((request) => (runtimeRequest = request))
+    runtimeAdapter = await createTauriPickerRuntimeAdapter()
+    return await runtimeAdapter.start((request) => (runtimeRequest = request))
   })
+
+  function modelRefFromValue(value: string | undefined): ModelRef | undefined {
+    if (!value) return undefined
+    const model = modelOptions.find((candidate) => `${candidate.providerID}/${candidate.modelID}` === value)
+    return model ? { providerID: model.providerID, modelID: model.modelID } : undefined
+  }
+
+  function currentModelSelectionState() {
+    const selections: Record<string, ModelRef> = {}
+    for (const row of modelState.rows) {
+      const model = modelRefFromValue(selectedModels[row.id])
+      if (model) selections[row.id] = model
+    }
+    return { ...modelState, selections }
+  }
+
+  async function submitModelSelection() {
+    const state = currentModelSelectionState()
+    if (modelSelectionSubmitDisabled(state)) return
+    if (isDevPreview || isPreviewWindow || !runtimeAdapter) {
+      closePreviewWindow()
+      return
+    }
+    await runtimeAdapter.submit(buildModelSelectionSubmitParams(state))
+    await getCurrentWindow().close()
+  }
+
+  async function cancelPicker() {
+    if (isDevPreview || isPreviewWindow || !runtimeAdapter) {
+      closePreviewWindow()
+      return
+    }
+    await runtimeAdapter.cancel()
+    await getCurrentWindow().close()
+  }
+
+  function handleKeydown(event: KeyboardEvent) {
+    if (event.key !== "Escape") return
+    event.preventDefault()
+    void cancelPicker()
+  }
 
   async function openPreviewWindow(view: "models" | "settings") {
     if (!isDevPreview || typeof window === "undefined") return
@@ -109,6 +151,8 @@
   <title>OpenCode Model Dispatch Picker</title>
 </svelte:head>
 
+<svelte:window on:keydown={handleKeydown} />
+
 <section
   class="shell"
   class:preview-shell={isPreviewWindow}
@@ -125,7 +169,7 @@
       <div class="chrome-controls" role="presentation" on:mousedown|stopPropagation>
         <button type="button" aria-label="Minimize" on:click={minimizeWindow}>−</button>
         <button type="button" aria-label="Maximize" on:click={toggleMaximizeWindow}>□</button>
-        <button type="button" aria-label="Close" on:click={closePreviewWindow}>×</button>
+        <button type="button" aria-label="Close" on:click={cancelPicker}>×</button>
       </div>
     </header>
   {/if}
@@ -195,8 +239,8 @@
         {/if}
 
         <footer class="window-actions">
-          <button type="button" class="secondary" on:click={closePreviewWindow}>Cancel</button>
-          <button type="button" class="primary" on:click={closePreviewWindow}>Start tasks</button>
+          <button type="button" class="secondary" on:click={cancelPicker}>Cancel</button>
+          <button type="button" class="primary" disabled={modelSelectionSubmitDisabled(currentModelSelectionState())} on:click={submitModelSelection}>Start tasks</button>
         </footer>
       </section>
     {:else}
