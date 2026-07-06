@@ -20,6 +20,7 @@ import {
 } from "../picker/src/protocol"
 import { cssVariables, themeTokens } from "../picker/src/theme"
 import { availableOpenCodeThemeIDs, resolveOpenCodeThemeCss } from "../picker/src/opencode-theme-resolver"
+import { resolvePickerThemeHint } from "../picker/src/runtime-request"
 
 const models = [
   { providerID: "anthropic", providerName: "Anthropic", modelID: "claude-sonnet-4", displayName: "Claude Sonnet 4" },
@@ -192,6 +193,26 @@ describe("picker protocol contract fixture", () => {
 })
 
 describe("picker theme bridge", () => {
+  test("derives OpenCode theme from runtime picker request when URL has no theme override", () => {
+    const hint = resolvePickerThemeHint(new URLSearchParams(), {
+      theme: { themeID: "material", colorScheme: "light" },
+    }, { themeID: "nightowl", colorScheme: "dark" })
+
+    const css = resolveOpenCodeThemeCss(hint)
+
+    expect(css.themeID).toBe("material")
+    expect(css.mode).toBe("light")
+  })
+
+  test("keeps URL theme ahead of runtime request and preview fixture fallbacks", () => {
+    const params = new URLSearchParams("themeID=nightowl&colorScheme=dark")
+
+    expect(resolvePickerThemeHint(params, { theme: { themeID: "material", colorScheme: "light" } }, { themeID: "github", colorScheme: "light" })).toEqual({
+      themeID: "nightowl",
+      colorScheme: "dark",
+    })
+  })
+
   test("OpenCode CSS variables override fallback picker tokens", () => {
     const css = cssVariables(themeTokens.dark, {
       mode: "dark",

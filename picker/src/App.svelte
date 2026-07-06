@@ -5,16 +5,15 @@
   import { createSetupState } from "./setup-reducer"
   import { resolveOpenCodeThemeCss } from "./opencode-theme-resolver"
   import { cssVariables, resolveTheme, themeTokens } from "./theme"
+  import { getPickerRuntimeRequest, resolvePickerThemeHint } from "./runtime-request"
   import NumberRow from "./NumberRow.svelte"
   import previewFixture from "./preview-fixture.json"
   import ToggleRow from "./ToggleRow.svelte"
 
   const isDevPreview = import.meta.env.DEV
   const params = typeof window === "undefined" ? new URLSearchParams() : new URLSearchParams(window.location.search)
-  const themeHint = {
-    themeID: params.get("themeID") ?? previewFixture.theme?.themeID,
-    colorScheme: params.get("colorScheme") ?? previewFixture.theme?.colorScheme,
-  }
+  const runtimeRequest = getPickerRuntimeRequest()
+  const themeHint = resolvePickerThemeHint(params, runtimeRequest, previewFixture.theme)
   const resolvedOpenCodeTheme = resolveOpenCodeThemeCss(themeHint)
   const themeName = resolveTheme(resolvedOpenCodeTheme.mode)
   const tokens = themeTokens[themeName]
