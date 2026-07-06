@@ -7,6 +7,7 @@ const pickerProject = new URL("../picker/package.json", import.meta.url)
 const pickerSrc = fileURLToPath(new URL("../picker/src", import.meta.url))
 const pickerViteBin = new URL("../picker/node_modules/.bin/vite", import.meta.url)
 const pickerViteCmd = new URL("../picker/node_modules/.bin/vite.cmd", import.meta.url)
+const pickerViteExe = new URL("../picker/node_modules/.bin/vite.exe", import.meta.url)
 
 async function hasTypeScriptSource(path: string): Promise<boolean> {
   try {
@@ -14,7 +15,7 @@ async function hasTypeScriptSource(path: string): Promise<boolean> {
     for (const entry of entries) {
       const child = `${path}/${entry.name}`
       if (entry.isDirectory() && (await hasTypeScriptSource(child))) return true
-      if (entry.isFile() && /\.tsx?$/.test(entry.name)) return true
+      if (entry.isFile() && /\.(ts|svelte)$/.test(entry.name)) return true
     }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false
@@ -35,7 +36,11 @@ if (!(await hasTypeScriptSource(pickerSrc))) {
   process.exit(0)
 }
 
-if (!(await Bun.file(pickerViteBin).exists()) && !(await Bun.file(pickerViteCmd).exists())) {
+if (
+  !(await Bun.file(pickerViteBin).exists()) &&
+  !(await Bun.file(pickerViteCmd).exists()) &&
+  !(await Bun.file(pickerViteExe).exists())
+) {
   console.log("picker build skipped: picker dependencies are not installed")
   await writeReleaseAsset()
   process.exit(0)

@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "identifier": "com.opencode.model-dispatch-picker",
   "build": {
-    "beforeDevCommand": "bun run dev",
+    "beforeDevCommand": "bun run dev -- --host 127.0.0.1",
     "beforeBuildCommand": "bun run build",
-    "devUrl": "http://localhost:5173",
+    "devUrl": "http://127.0.0.1:5173",
     "frontendDist": "../dist"
   },
   "app": {
@@ -16,6 +16,11 @@
         "title": "Model Dispatch",
         "width": 760,
         "height": 560,
+        "center": true,
+        "decorations": false,
+        "shadow": true,
+        "transparent": true,
+        "theme": "Dark",
         "resizable": true,
         "alwaysOnTop": true,
         "focus": true

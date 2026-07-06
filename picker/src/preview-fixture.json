@@ -1,0 +1,68 @@
+{
+  "theme": {
+    "themeID": "oc-2",
+    "colorScheme": "dark"
+  },
+  "modelSelection": {
+    "tasks": [
+      {
+        "id": "task-investigate",
+        "agentType": "investigator",
+        "description": "Find the OpenCode hook and model metadata surface without logging prompts."
+      },
+      {
+        "id": "task-build",
+        "agentType": "builder",
+        "description": "Patch the picker process and shadow-agent config with minimal changes."
+      },
+      {
+        "id": "task-review",
+        "agentType": "reviewer",
+        "description": "Review the diff for privacy leaks, fallback behavior, and batching regressions."
+      }
+    ],
+    "models": [
+      {
+        "providerID": "anthropic",
+        "providerName": "Anthropic",
+        "modelID": "claude-3-5-sonnet",
+        "displayName": "Claude 3.5 Sonnet"
+      },
+      {
+        "providerID": "anthropic",
+        "providerName": "Anthropic",
+        "modelID": "claude-3-opus",
+        "displayName": "Claude 3 Opus"
+      },
+      {
+        "providerID": "openai",
+        "providerName": "OpenAI",
+        "modelID": "gpt-4o",
+        "displayName": "GPT-4o"
+      },
+      {
+        "providerID": "google",
+        "providerName": "Google",
+        "modelID": "gemini-1.5-pro",
+        "displayName": "Gemini 1.5 Pro"
+      }
+    ]
+  },
+  "setup": {
+    "scope": "project",
+    "settings": {
+      "privacy": {
+        "loggingEnabled": false
+      },
+      "dispatch": {
+        "enabled": true,
+        "batchMs": 500,
+        "pickerTimeoutMs": 20000,
+        "technicalFailure": "default_model"
+      },
+      "setup": {
+        "snoozedUntil": 0
+      }
+    }
+  }
+}

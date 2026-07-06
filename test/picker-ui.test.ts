@@ -18,6 +18,8 @@ import {
   decodeNdjson,
   encodeJsonRpc,
 } from "../picker/src/protocol"
+import { cssVariables, themeTokens } from "../picker/src/theme"
+import { availableOpenCodeThemeIDs, resolveOpenCodeThemeCss } from "../picker/src/opencode-theme-resolver"
 
 const models = [
   { providerID: "anthropic", providerName: "Anthropic", modelID: "claude-sonnet-4", displayName: "Claude Sonnet 4" },
@@ -173,5 +175,53 @@ describe("picker protocol contract fixture", () => {
 
     expect(decodeNdjson(fixture.pluginOut).at(-1)).toEqual({ jsonrpc: "2.0", method: "submit", params: { mode: "setup", scope: "global", settings } })
     expect(decodeNdjson(fixture.pickerOut).at(-1)).toEqual({ jsonrpc: "2.0", id: 1, method: "open", params: { mode: "setup", settings } })
+  })
+
+  test("passes OpenCode theme CSS through the picker contract", () => {
+    const fixture = createPickerContractFixture()
+    const theme = {
+      mode: "dark",
+      cssText: "--v2-background-bg-layer-01: #101820; --v2-text-text-base: #f7fafc;",
+      cssVariables: { "opencode-bg": "#101820" },
+    }
+
+    fixture.fromPlugin(encodeJsonRpc({ jsonrpc: "2.0", id: "open", method: "open", params: { mode: "setup", settings: defaultSetupSettings(), theme } }))
+
+    expect(fixture.pickerMessages[0]).toMatchObject({ jsonrpc: "2.0", id: "open", method: "open", params: { theme } })
+  })
+})
+
+describe("picker theme bridge", () => {
+  test("OpenCode CSS variables override fallback picker tokens", () => {
+    const css = cssVariables(themeTokens.dark, {
+      mode: "dark",
+      cssText: "--v2-background-bg-layer-01: #101820; --v2-text-text-base: #f7fafc;",
+      cssVariables: { "opencode-bg": "#101820" },
+    })
+
+    expect(css).toContain("--v2-background-bg-layer-01: #101820;")
+    expect(css).toContain("--v2-text-text-base: #f7fafc;")
+    expect(css).toContain("--opencode-bg: #101820;")
+  })
+
+  test("bundled OpenCode themes generate v1 and v2 CSS variables", () => {
+    expect(availableOpenCodeThemeIDs()).toContain("oc-2")
+    expect(availableOpenCodeThemeIDs()).toContain("nightowl")
+
+    const css = resolveOpenCodeThemeCss({ themeID: "nightowl", colorScheme: "dark" })
+
+    expect(css.themeID).toBe("nightowl")
+    expect(css.mode).toBe("dark")
+    expect(css.cssText).toContain("--background-base:")
+    expect(css.cssText).toContain("--v2-background-bg-base:")
+    expect(css.cssText).toContain("--v2-text-text-base:")
+    expect(css.cssVariables["v2-background-bg-base"]).toBeDefined()
+  })
+
+  test("unknown theme and color scheme fall back safely", () => {
+    const css = resolveOpenCodeThemeCss({ themeID: "does-not-exist", colorScheme: "neon" })
+
+    expect(css.themeID).toBe("oc-2")
+    expect(css.mode).toBe("dark")
   })
 })

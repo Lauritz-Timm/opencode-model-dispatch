@@ -68,6 +68,33 @@ describe("plugin hook wiring", () => {
     })
   })
 
+  test("passes picker theme from appearance settings with env override", async () => {
+    const previousTheme = process.env.OPENCODE_MODEL_DISPATCH_THEME_ID
+    const previousScheme = process.env.OPENCODE_MODEL_DISPATCH_COLOR_SCHEME
+    process.env.OPENCODE_MODEL_DISPATCH_THEME_ID = "nightowl"
+    process.env.OPENCODE_MODEL_DISPATCH_COLOR_SCHEME = "dark"
+    try {
+      const { hooks, pickerRequests } = await makePlugin({ enabled: true, appearance: { theme_id: "material", color_scheme: "light" } })
+
+      await hooks["tool.execute.before"]!({ tool: "task", sessionID: "parent", callID: "call-1" }, { args: { subagent_type: "builder" } })
+
+      expect(pickerRequests[0]?.theme).toEqual({ themeID: "nightowl", colorScheme: "dark" })
+    } finally {
+      if (previousTheme === undefined) delete process.env.OPENCODE_MODEL_DISPATCH_THEME_ID
+      else process.env.OPENCODE_MODEL_DISPATCH_THEME_ID = previousTheme
+      if (previousScheme === undefined) delete process.env.OPENCODE_MODEL_DISPATCH_COLOR_SCHEME
+      else process.env.OPENCODE_MODEL_DISPATCH_COLOR_SCHEME = previousScheme
+    }
+  })
+
+  test("passes picker theme from appearance settings", async () => {
+    const { hooks, pickerRequests } = await makePlugin({ enabled: true, appearance: { theme_id: "material", color_scheme: "light" } })
+
+    await hooks["tool.execute.before"]!({ tool: "task", sessionID: "parent", callID: "call-1" }, { args: { subagent_type: "builder" } })
+
+    expect(pickerRequests[0]?.theme).toEqual({ themeID: "material", colorScheme: "light" })
+  })
+
   test("cancel throws and logs MODEL_DISPATCH_CANCELLED without starting subagents", async () => {
     const { hooks, entries, cache } = await makePlugin({ enabled: true, pickerDecision: { kind: "cancel" } })
 
@@ -193,14 +220,16 @@ async function makePlugin(options: {
   shouldOpenFirstRunSetup?: ModelDispatchPluginDeps["shouldOpenFirstRunSetup"]
   openFirstRunSetup?: ModelDispatchPluginDeps["openFirstRunSetup"]
   configureModelDispatch?: ModelDispatchPluginDeps["configureModelDispatch"]
+  appearance?: ModelDispatchSettings["appearance"]
 }) {
   const entries: PluginLogEntry[] = []
-  const pickerRequests: Array<{ sessionID: string; rows: Array<{ callID: string }> }> = []
+  const pickerRequests: Array<{ sessionID: string; rows: Array<{ callID: string }>; theme?: unknown }> = []
   const cache = new MemoryShadowCache()
   const settings: ModelDispatchSettings = {
     ...DEFAULT_SETTINGS,
     privacy: { logging_enabled: options.loggingEnabled ?? true },
     dispatch: { ...DEFAULT_SETTINGS.dispatch, enabled: options.enabled, batch_ms: 0 },
+    appearance: options.appearance ?? {},
   }
   const deps: ModelDispatchPluginDeps = {
     readSettings: async () => ({ settings, warnings: [] }),
@@ -208,7 +237,7 @@ async function makePlugin(options: {
     cache,
     scheduleBatch: (fn) => queueMicrotask(fn),
     launchPicker: async (request) => {
-      pickerRequests.push({ sessionID: request.sessionID, rows: request.rows })
+      pickerRequests.push({ sessionID: request.sessionID, rows: request.rows, theme: request.theme })
       return options.pickerDecision ?? { kind: "submit", payload: { applyToAll: { providerID: "anthropic", modelID: "claude" } } }
     },
     createShadowAgent: (sourceAgent, model) => {

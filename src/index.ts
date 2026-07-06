@@ -17,6 +17,12 @@ export interface PickerRequest extends ShapeModelCatalogResult {
   sessionID: string
   calls: TaskCall[]
   timeoutMs: number
+  theme?: PickerThemeHint
+}
+
+export interface PickerThemeHint {
+  themeID?: string
+  colorScheme?: "light" | "dark" | "system"
 }
 
 export interface ShadowCacheLike {
@@ -150,6 +156,7 @@ async function dispatchBatch(
     sessionID: batch.sessionID,
     calls: batch.calls,
     timeoutMs: settings.dispatch.picker_timeout_ms,
+    theme: resolvePickerTheme(settings),
   })
 
   if (decision.kind === "cancel") {
@@ -268,6 +275,17 @@ function settingsPaths(input: PluginInput) {
     globalPath: join(homedir(), ".config", "opencode", "model-dispatch.json"),
     projectPath: join(directory, ".opencode", "model-dispatch.json"),
   }
+}
+
+function resolvePickerTheme(settings: ModelDispatchSettings, env: Record<string, string | undefined> = process.env): PickerThemeHint | undefined {
+  const themeID = env.OPENCODE_MODEL_DISPATCH_THEME_ID ?? settings.appearance.theme_id
+  const colorScheme = normalizeColorScheme(env.OPENCODE_MODEL_DISPATCH_COLOR_SCHEME ?? settings.appearance.color_scheme)
+  if (!themeID && !colorScheme) return undefined
+  return { ...(themeID ? { themeID } : {}), ...(colorScheme ? { colorScheme } : {}) }
+}
+
+function normalizeColorScheme(value: string | undefined): PickerThemeHint["colorScheme"] | undefined {
+  return value === "light" || value === "dark" || value === "system" ? value : undefined
 }
 
 function readSessionFromEvent(event: unknown): SessionRecord | undefined {

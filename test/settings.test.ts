@@ -60,6 +60,18 @@ describe("settings", () => {
     expect(result.settings.privacy.logging_enabled).toBe(false)
   })
 
+  test("reads appearance theme settings globally", async () => {
+    const paths = await tempPath()
+    await mkdir(join(paths.dir, "global"), { recursive: true })
+    await mkdir(join(paths.dir, "project", ".opencode"), { recursive: true })
+    await writeFile(paths.globalPath, JSON.stringify({ appearance: { theme_id: "nightowl", color_scheme: "dark" } }), "utf8")
+    await writeFile(paths.projectPath, JSON.stringify({ appearance: { theme_id: "material", color_scheme: "light" } }), "utf8")
+
+    const result = await readSettings(paths)
+
+    expect(result.settings.appearance).toEqual({ theme_id: "nightowl", color_scheme: "dark" })
+  })
+
   test("supports setup snooze for 24 hours", () => {
     const now = new Date("2026-01-01T00:00:00.000Z")
 

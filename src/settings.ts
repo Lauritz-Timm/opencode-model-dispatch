@@ -18,10 +18,16 @@ export interface SetupSettings {
   snoozed_until: number
 }
 
+export interface AppearanceSettings {
+  theme_id?: string
+  color_scheme?: "light" | "dark" | "system"
+}
+
 export interface ModelDispatchSettings {
   privacy: PrivacySettings
   dispatch: DispatchSettings
   setup: SetupSettings
+  appearance: AppearanceSettings
 }
 
 export interface SettingsPaths {
@@ -38,6 +44,7 @@ type PartialSettings = Partial<{
   privacy: Partial<PrivacySettings>
   dispatch: Partial<DispatchSettings>
   setup: Partial<SetupSettings>
+  appearance: Partial<AppearanceSettings>
 }>
 
 export const DEFAULT_SETTINGS: ModelDispatchSettings = {
@@ -49,6 +56,7 @@ export const DEFAULT_SETTINGS: ModelDispatchSettings = {
     technical_failure: "default_model",
   },
   setup: { snoozed_until: 0 },
+  appearance: {},
 }
 
 export async function readSettings(paths: SettingsPaths): Promise<ReadSettingsResult> {
@@ -94,6 +102,10 @@ function mergeSettings(globalSettings: PartialSettings | undefined, projectSetti
       ...globalSettings?.setup,
       ...projectSettings?.setup,
     },
+    appearance: {
+      ...DEFAULT_SETTINGS.appearance,
+      ...globalSettings?.appearance,
+    },
   }
 }
 
@@ -135,6 +147,14 @@ function decodeSettings(value: unknown): PartialSettings {
   if (isRecord(value.setup)) {
     decoded.setup = {}
     if (typeof value.setup.snoozed_until === "number") decoded.setup.snoozed_until = value.setup.snoozed_until
+  }
+
+  if (isRecord(value.appearance)) {
+    decoded.appearance = {}
+    if (typeof value.appearance.theme_id === "string") decoded.appearance.theme_id = value.appearance.theme_id
+    if (value.appearance.color_scheme === "light" || value.appearance.color_scheme === "dark" || value.appearance.color_scheme === "system") {
+      decoded.appearance.color_scheme = value.appearance.color_scheme
+    }
   }
 
   return decoded

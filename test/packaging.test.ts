@@ -57,11 +57,29 @@ describe("packaging and release assets", () => {
     expect(script).toContain("files")
   })
 
+  test("picker developer scripts include native Tauri doctor and dev entrypoint", async () => {
+    const pkg = await readJson<PackageJson>("package.json")
+    const doctor = await readText("scripts/check-picker-dev.ts")
+
+    expect(pkg.scripts?.["doctor:picker"]).toBe("bun run scripts/check-picker-dev.ts")
+    expect(pkg.scripts?.["dev:picker:tauri"]).toBe("bun run scripts/dev-picker-tauri.ts")
+    expect(doctor).toContain("cargo --version")
+    expect(doctor).toContain("rustc --version")
+    expect(doctor).toContain("bun run --cwd picker tauri --version")
+    expect(doctor).toContain("bun run preview:picker")
+    expect(await readText("scripts/dev-picker-tauri.ts")).toContain(".cargo/bin")
+  })
+
   test("build picker script creates the release asset path expected by publish workflow", async () => {
     const script = await readText("scripts/build-picker.ts")
 
     expect(script).toContain("dist-picker")
     expect(script).toContain("picker-${platform}-${arch}${ext}")
+    expect(script).toContain("vite.exe")
+  })
+
+  test("Tauri Windows build has the required icon resource", async () => {
+    expect(await Bun.file(new URL("../picker/src-tauri/icons/icon.ico", import.meta.url)).exists()).toBe(true)
   })
 
   test("CI validates plugin tests, typecheck, picker build, and packaging checks", async () => {
