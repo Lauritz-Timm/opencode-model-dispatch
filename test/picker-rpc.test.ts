@@ -49,8 +49,23 @@ describe("picker JSON-RPC protocol", () => {
   })
 
   test("accepts the reserved protocol methods", () => {
-    for (const method of ["ready", "validateModel", "refreshModels", "submit", "cancel", "log", "resize", "themeChanged", "focusChanged"]) {
+    for (const method of ["ready", "start", "validateModel", "refreshModels", "submit", "cancel", "log", "resize", "themeChanged", "focusChanged"]) {
       expect(parseJsonRpcMessage(JSON.stringify({ jsonrpc: "2.0", method }))).toEqual({ jsonrpc: "2.0", method })
     }
+  })
+
+  test("locks backend picker runtime IPC message shapes", () => {
+    expect(parseJsonRpcMessage('{"jsonrpc":"2.0","method":"ready"}')).toEqual({ jsonrpc: "2.0", method: "ready" })
+    expect(parseJsonRpcMessage('{"jsonrpc":"2.0","method":"start","params":{"sessionID":"parent","catalog":[],"applyToAllCatalog":[],"rows":[]}}')).toEqual({
+      jsonrpc: "2.0",
+      method: "start",
+      params: { sessionID: "parent", catalog: [], applyToAllCatalog: [], rows: [] },
+    })
+    expect(parseJsonRpcMessage('{"jsonrpc":"2.0","method":"submit","params":{"selections":[{"taskID":"call-1","providerID":"openai","modelID":"gpt-4.1"}]}}')).toEqual({
+      jsonrpc: "2.0",
+      method: "submit",
+      params: { selections: [{ taskID: "call-1", providerID: "openai", modelID: "gpt-4.1" }] },
+    })
+    expect(parseJsonRpcMessage('{"jsonrpc":"2.0","method":"cancel"}')).toEqual({ jsonrpc: "2.0", method: "cancel" })
   })
 })

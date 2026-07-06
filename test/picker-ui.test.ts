@@ -20,7 +20,7 @@ import {
 } from "../picker/src/protocol"
 import { cssVariables, themeTokens } from "../picker/src/theme"
 import { resolveOpenCodeThemeCss } from "../picker/src/opencode-theme-resolver"
-import { resolvePickerRuntimeData, resolvePickerThemeHint } from "../picker/src/runtime-request"
+import { modelSelectionInputFromPickerRequest, resolvePickerRuntimeData, resolvePickerThemeHint } from "../picker/src/runtime-request"
 
 const models = [
   { providerID: "anthropic", providerName: "Anthropic", modelID: "claude-sonnet-4", displayName: "Claude Sonnet 4" },
@@ -193,6 +193,41 @@ describe("picker protocol contract fixture", () => {
 })
 
 describe("picker theme bridge", () => {
+  test("converts backend picker request catalog rows into model-selection UI input", () => {
+    const input = modelSelectionInputFromPickerRequest({
+      catalog: [
+        {
+          providerID: "anthropic",
+          providerName: "Anthropic",
+          icon: "A",
+          models: [{ providerID: "anthropic", providerName: "Anthropic", modelID: "claude-sonnet-4", modelName: "Claude Sonnet 4" }],
+        },
+      ],
+      applyToAllCatalog: [
+        {
+          providerID: "openai",
+          providerName: "OpenAI",
+          icon: "AI",
+          models: [{ providerID: "openai", providerName: "OpenAI", modelID: "gpt-4.1", modelName: "GPT-4.1" }],
+        },
+      ],
+      rows: [
+        {
+          callID: "call-1",
+          agentName: "builder",
+          preselect: { providerID: "anthropic", providerName: "Anthropic", modelID: "claude-sonnet-4", modelName: "Claude Sonnet 4", hidden: false, source: "agent" },
+        },
+      ],
+    })
+
+    expect(input).toEqual({
+      tasks: [{ id: "call-1", agentType: "builder", description: "builder" }],
+      models: [{ providerID: "anthropic", providerName: "Anthropic", modelID: "claude-sonnet-4", displayName: "Claude Sonnet 4" }],
+      applyToAllModels: [{ providerID: "openai", providerName: "OpenAI", modelID: "gpt-4.1", displayName: "GPT-4.1" }],
+      preselectedModels: { "call-1": { providerID: "anthropic", modelID: "claude-sonnet-4" } },
+    })
+  })
+
   test("production runtime data does not fall back to preview fixture", () => {
     const fixture = {
       theme: { themeID: "nightowl", colorScheme: "dark" },

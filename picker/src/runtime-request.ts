@@ -9,6 +9,33 @@ export interface PickerThemeHint {
 export interface PickerModelSelectionInput {
   tasks: PickerTask[]
   models: PickerModel[]
+  applyToAllModels?: PickerModel[]
+  preselectedModels?: Record<string, { providerID: string; modelID: string }>
+}
+
+export interface PickerRequestCatalogModel {
+  providerID: string
+  providerName: string
+  modelID: string
+  modelName: string
+}
+
+export interface PickerRequestCatalogProvider {
+  providerID: string
+  providerName: string
+  models: PickerRequestCatalogModel[]
+}
+
+export interface PickerRequestRow {
+  callID: string
+  agentName?: string
+  preselect?: PickerRequestCatalogModel & { hidden: boolean; source: "agent" | "parent" }
+}
+
+export interface BackendPickerRequestInput {
+  catalog: PickerRequestCatalogProvider[]
+  applyToAllCatalog: PickerRequestCatalogProvider[]
+  rows: PickerRequestRow[]
 }
 
 export interface PickerSetupInput {
@@ -54,6 +81,23 @@ export function resolvePickerRuntimeData(params: URLSearchParams, runtimeRequest
   return runtimeRequest
 }
 
+export function modelSelectionInputFromPickerRequest(request: BackendPickerRequestInput): PickerModelSelectionInput {
+  return {
+    tasks: request.rows.map((row) => ({
+      id: row.callID,
+      agentType: row.agentName ?? "task",
+      description: row.agentName ?? row.callID,
+    })),
+    models: flattenCatalog(request.catalog),
+    applyToAllModels: flattenCatalog(request.applyToAllCatalog),
+    preselectedModels: Object.fromEntries(
+      request.rows
+        .filter((row) => row.preselect)
+        .map((row) => [row.callID, { providerID: row.preselect!.providerID, modelID: row.preselect!.modelID }]),
+    ),
+  }
+}
+
 function readRuntimeRequest(value: unknown): PickerRuntimeRequest | undefined {
   if (!isRecord(value)) return undefined
   const theme = readThemeHint(value.theme)
@@ -84,4 +128,15 @@ function readSetup(value: unknown): PickerSetupInput | undefined {
   if (!isRecord(value) || !isRecord(value.settings)) return undefined
   const scope = value.scope === "project" || value.scope === "global" ? value.scope : undefined
   return { settings: value.settings as unknown as SetupSettings, ...(scope ? { scope } : {}) }
+}
+
+function flattenCatalog(catalog: PickerRequestCatalogProvider[]): PickerModel[] {
+  return catalog.flatMap((provider) =>
+    provider.models.map((model) => ({
+      providerID: model.providerID,
+      providerName: model.providerName,
+      modelID: model.modelID,
+      displayName: model.modelName,
+    })),
+  )
 }
