@@ -68,7 +68,7 @@ export function createModelDispatchPlugin(deps: ModelDispatchPluginDeps = {}): P
       batchMs: settings.dispatch.batch_ms,
       schedule: deps.scheduleBatch,
       onReady: (batch) => {
-        void dispatchBatch(batch, input.client as unknown as ModelCatalogClient, settings, logger, batcher, shadowAgents, deps)
+        void dispatchBatch(batch, input.client as unknown as ModelCatalogClient, settings, logger, batcher, deps)
       },
     })
 
@@ -145,7 +145,6 @@ async function dispatchBatch(
   settings: ModelDispatchSettings,
   logger: PluginLogger,
   batcher: TaskBatcher,
-  shadowAgents: Map<string, AgentDefinition>,
   deps: ModelDispatchPluginDeps,
 ): Promise<void> {
   const batchID = `${batch.sessionID}:${batch.calls.map((call) => call.callID).join(",")}`
@@ -183,8 +182,6 @@ async function dispatchBatch(
     selectedCount: selections.length,
   })
   batcher.resolveBatch(batch.sessionID, selections)
-
-  if (shadowAgents.size < 0) throw new Error("unreachable")
 }
 
 async function defaultLaunchPicker(request: PickerRequest): Promise<PickerDecision> {
