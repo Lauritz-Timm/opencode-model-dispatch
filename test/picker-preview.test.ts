@@ -18,12 +18,11 @@ describe("picker preview fixtures", () => {
     expect(pkg.scripts?.["preview:picker"]).toBe("bun run dev:picker")
   })
 
-  test("picker build emits the Svelte app instead of a static skeleton", async () => {
+  test("picker build uses Vite without the obsolete static build script", async () => {
     const pkg = await readJson<{ scripts?: Record<string, string> }>("picker/package.json")
-    const buildStatic = await readText("picker/scripts/build-static.ts")
 
     expect(pkg.scripts?.build).toBe("tsc -p tsconfig.json --noEmit && vite build")
-    expect(buildStatic).not.toContain("OpenCode Model Dispatch Picker Skeleton")
+    expect(await Bun.file(new URL("picker/scripts/build-static.ts", root)).exists()).toBe(false)
   })
 
   test("preview fixture includes realistic model-selection and setup data", async () => {
