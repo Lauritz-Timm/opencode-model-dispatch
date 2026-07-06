@@ -155,7 +155,7 @@ describe("picker protocol contract fixture", () => {
   test("exchanges picker selection NDJSON JSON-RPC with the plugin harness shape", () => {
     const fixture = createPickerContractFixture()
 
-    fixture.fromPlugin(encodeJsonRpc({ jsonrpc: "2.0", id: "open", method: "open", params: { mode: "model-selection", tasks, models } }))
+    fixture.fromPlugin(encodeJsonRpc({ jsonrpc: "2.0", id: "start", method: "start", params: { mode: "model-selection", tasks, models } }))
     fixture.fromPicker(encodeJsonRpc({ jsonrpc: "2.0", method: "ready", params: { mode: "model-selection" } }))
     fixture.fromPicker(encodeJsonRpc({ jsonrpc: "2.0", method: "submit", params: { selections: [{ taskID: "task-a", providerID: "openai", modelID: "gpt-4.1" }] } }))
 
@@ -163,18 +163,18 @@ describe("picker protocol contract fixture", () => {
       { jsonrpc: "2.0", method: "ready", params: { mode: "model-selection" } },
       { jsonrpc: "2.0", method: "submit", params: { selections: [{ taskID: "task-a", providerID: "openai", modelID: "gpt-4.1" }] } },
     ])
-    expect(fixture.pickerMessages[0]).toMatchObject({ jsonrpc: "2.0", id: "open", method: "open" })
+    expect(fixture.pickerMessages[0]).toMatchObject({ jsonrpc: "2.0", id: "start", method: "start" })
   })
 
   test("exchanges setup/config NDJSON JSON-RPC without importing root protocol code", () => {
     const fixture = createPickerContractFixture()
     const settings = defaultSetupSettings()
 
-    fixture.fromPlugin(encodeJsonRpc({ jsonrpc: "2.0", id: 1, method: "open", params: { mode: "setup", settings } }))
+    fixture.fromPlugin(encodeJsonRpc({ jsonrpc: "2.0", id: 1, method: "start", params: { mode: "setup", settings } }))
     fixture.fromPicker(encodeJsonRpc({ jsonrpc: "2.0", method: "submit", params: { mode: "setup", scope: "global", settings } }))
 
     expect(decodeNdjson(fixture.pluginOut).at(-1)).toEqual({ jsonrpc: "2.0", method: "submit", params: { mode: "setup", scope: "global", settings } })
-    expect(decodeNdjson(fixture.pickerOut).at(-1)).toEqual({ jsonrpc: "2.0", id: 1, method: "open", params: { mode: "setup", settings } })
+    expect(decodeNdjson(fixture.pickerOut).at(-1)).toEqual({ jsonrpc: "2.0", id: 1, method: "start", params: { mode: "setup", settings } })
   })
 
   test("passes OpenCode theme CSS through the picker contract", () => {
@@ -185,9 +185,9 @@ describe("picker protocol contract fixture", () => {
       cssVariables: { "opencode-bg": "#101820" },
     }
 
-    fixture.fromPlugin(encodeJsonRpc({ jsonrpc: "2.0", id: "open", method: "open", params: { mode: "setup", settings: defaultSetupSettings(), theme } }))
+    fixture.fromPlugin(encodeJsonRpc({ jsonrpc: "2.0", id: "start", method: "start", params: { mode: "setup", settings: defaultSetupSettings(), theme } }))
 
-    expect(fixture.pickerMessages[0]).toMatchObject({ jsonrpc: "2.0", id: "open", method: "open", params: { theme } })
+    expect(fixture.pickerMessages[0]).toMatchObject({ jsonrpc: "2.0", id: "start", method: "start", params: { theme } })
   })
 })
 
