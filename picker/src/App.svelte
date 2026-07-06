@@ -7,12 +7,13 @@
   import { resolveOpenCodeThemeCss } from "./opencode-theme-resolver"
   import { cssVariables, resolveTheme, themeTokens } from "./theme"
   import { getPickerRuntimeRequest, resolvePickerRuntimeData, resolvePickerThemeHint, type PickerPreviewFixture } from "./runtime-request"
+  import { createTauriPickerRuntimeAdapter } from "./runtime-rpc"
   import NumberRow from "./NumberRow.svelte"
   import ToggleRow from "./ToggleRow.svelte"
 
   const isDevPreview = import.meta.env.DEV
   const params = typeof window === "undefined" ? new URLSearchParams() : new URLSearchParams(window.location.search)
-  const runtimeRequest = getPickerRuntimeRequest()
+  let runtimeRequest = getPickerRuntimeRequest()
   const isPreviewWindow = isDevPreview && params.get("preview") === "1"
   let previewFixture: PickerPreviewFixture | undefined
   $: runtimeData = resolvePickerRuntimeData(params, runtimeRequest, previewFixture)
@@ -36,8 +37,14 @@
   $: pickerTimeoutMs = setupState.settings.dispatch.pickerTimeoutMs
 
   onMount(async () => {
-    if (!isPreviewWindow) return
-    previewFixture = (await import("./preview-fixture.json")).default
+    if (isPreviewWindow) {
+      previewFixture = (await import("./preview-fixture.json")).default
+      return
+    }
+    if (isDevPreview) return
+
+    const adapter = await createTauriPickerRuntimeAdapter()
+    return await adapter.start((request) => (runtimeRequest = request))
   })
 
   async function openPreviewWindow(view: "models" | "settings") {

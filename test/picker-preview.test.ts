@@ -41,6 +41,8 @@ describe("picker preview fixtures", () => {
 
     expect(app).toContain("previewFixture")
     expect(app).toContain('import("./preview-fixture.json")')
+    expect(app).toContain("createTauriPickerRuntimeAdapter")
+    expect(app).toContain("if (isDevPreview) return")
     expect(app).not.toContain('import previewFixture from "./preview-fixture.json"')
     expect(app).toContain("taskCount")
     expect(app).toContain("Apply to all")

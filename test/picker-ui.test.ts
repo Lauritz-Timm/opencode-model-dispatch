@@ -21,6 +21,7 @@ import {
 import { cssVariables, themeTokens } from "../picker/src/theme"
 import { resolveOpenCodeThemeCss } from "../picker/src/opencode-theme-resolver"
 import { modelSelectionInputFromPickerRequest, resolvePickerRuntimeData, resolvePickerThemeHint } from "../picker/src/runtime-request"
+import { createPickerRuntimeAdapter } from "../picker/src/runtime-rpc"
 
 const models = [
   { providerID: "anthropic", providerName: "Anthropic", modelID: "claude-sonnet-4", displayName: "Claude Sonnet 4" },
@@ -193,6 +194,57 @@ describe("picker protocol contract fixture", () => {
 })
 
 describe("picker theme bridge", () => {
+  test("runtime adapter sends ready and converts start requests into picker runtime data", async () => {
+    const received: unknown[] = []
+    const written: string[] = []
+    const adapter = createPickerRuntimeAdapter({
+      listen: async (_event, handler) => {
+        received.push(handler)
+        return () => received.push("unlisten")
+      },
+      writeStdoutLine: async (line) => written.push(line),
+    })
+
+    let runtimeData
+    const stop = await adapter.start((request) => (runtimeData = request))
+
+    expect(decodeNdjson(`${written[0]}\n`)).toEqual([{ jsonrpc: "2.0", method: "ready" }])
+
+    const handler = received[0] as (event: { payload: string }) => void
+    handler({
+      payload: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "start",
+        method: "start",
+        params: {
+          catalog: [
+            {
+              providerID: "anthropic",
+              providerName: "Anthropic",
+              models: [{ providerID: "anthropic", providerName: "Anthropic", modelID: "claude-sonnet-4", modelName: "Claude Sonnet 4" }],
+            },
+          ],
+          applyToAllCatalog: [],
+          rows: [{ callID: "call-1", agentName: "builder" }],
+          theme: { themeID: "nightowl", colorScheme: "dark" },
+        },
+      }),
+    })
+
+    expect(runtimeData).toEqual({
+      theme: { themeID: "nightowl", colorScheme: "dark" },
+      modelSelection: {
+        tasks: [{ id: "call-1", agentType: "builder", description: "builder" }],
+        models: [{ providerID: "anthropic", providerName: "Anthropic", modelID: "claude-sonnet-4", displayName: "Claude Sonnet 4" }],
+        applyToAllModels: [],
+        preselectedModels: {},
+      },
+    })
+
+    stop()
+    expect(received).toContain("unlisten")
+  })
+
   test("converts backend picker request catalog rows into model-selection UI input", () => {
     const input = modelSelectionInputFromPickerRequest({
       catalog: [
