@@ -1,0 +1,51 @@
+{
+  "name": "opencode-model-dispatch",
+  "version": "0.0.0",
+  "description": "OpenCode plugin design for automatic model selection on subagent dispatch.",
+  "license": "MIT",
+  "author": "Lauritz",
+  "homepage": "https://github.com/Lauritz/opencode-model-dispatch#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lauritz/opencode-model-dispatch.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Lauritz/opencode-model-dispatch/issues"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "subagent",
+    "model-picker",
+    "tauri"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "docs",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test",
+    "prepublishOnly": "bun run build"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": "*"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "*",
+    "typescript": "^5.6.0",
+    "bun-types": "latest"
+  }
+}

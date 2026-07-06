@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+docs/plan.md
+docs/spec.md
+*.log
+.DS_Store
+bun.lock
+.env
+.env.*
+!.env.example
