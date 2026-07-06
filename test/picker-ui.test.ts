@@ -20,7 +20,7 @@ import {
 } from "../picker/src/protocol"
 import { cssVariables, themeTokens } from "../picker/src/theme"
 import { availableOpenCodeThemeIDs, resolveOpenCodeThemeCss } from "../picker/src/opencode-theme-resolver"
-import { resolvePickerThemeHint } from "../picker/src/runtime-request"
+import { resolvePickerRuntimeData, resolvePickerThemeHint } from "../picker/src/runtime-request"
 
 const models = [
   { providerID: "anthropic", providerName: "Anthropic", modelID: "claude-sonnet-4", displayName: "Claude Sonnet 4" },
@@ -193,6 +193,20 @@ describe("picker protocol contract fixture", () => {
 })
 
 describe("picker theme bridge", () => {
+  test("production runtime data does not fall back to preview fixture", () => {
+    const fixture = {
+      theme: { themeID: "nightowl", colorScheme: "dark" },
+      modelSelection: { tasks, models },
+      setup: { settings: defaultSetupSettings(), scope: "project" as const },
+    }
+
+    expect(resolvePickerRuntimeData(new URLSearchParams(), undefined, fixture)).toBeUndefined()
+    expect(resolvePickerRuntimeData(new URLSearchParams("preview=1"), undefined, fixture)).toEqual(fixture)
+    expect(resolvePickerRuntimeData(new URLSearchParams(), { modelSelection: { tasks, models } }, fixture)).toEqual({
+      modelSelection: { tasks, models },
+    })
+  })
+
   test("derives OpenCode theme from runtime picker request when URL has no theme override", () => {
     const hint = resolvePickerThemeHint(new URLSearchParams(), {
       theme: { themeID: "material", colorScheme: "light" },

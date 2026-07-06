@@ -36,15 +36,17 @@ describe("picker preview fixtures", () => {
     expect(fixture.setup.scope).toBe("project")
   })
 
-  test("Svelte app renders fixture rows instead of empty skeleton data", async () => {
+  test("Svelte app loads fixture data only for preview mode", async () => {
     const app = await readText("picker/src/App.svelte")
 
     expect(app).toContain("previewFixture")
-    expect(app).toContain("fixtureTaskCount")
+    expect(app).toContain('import("./preview-fixture.json")')
+    expect(app).not.toContain('import previewFixture from "./preview-fixture.json"')
+    expect(app).toContain("taskCount")
     expect(app).toContain("Apply to all")
     expect(app).toContain("Open model picker")
     expect(app).toContain("Settings")
-    expect(app).not.toContain("tasks: [], models: []")
+    expect(app).toContain("Waiting for picker request")
   })
 
   test("dev launcher opens separate model picker and settings preview windows", async () => {

@@ -1,35 +1,44 @@
 <script lang="ts">
+  import { onMount } from "svelte"
   import { WebviewWindow } from "@tauri-apps/api/webviewWindow"
   import { getCurrentWindow } from "@tauri-apps/api/window"
   import { createModelSelectionState, filteredModelGroups } from "./model-selection-reducer"
   import { createSetupState } from "./setup-reducer"
   import { resolveOpenCodeThemeCss } from "./opencode-theme-resolver"
   import { cssVariables, resolveTheme, themeTokens } from "./theme"
-  import { getPickerRuntimeRequest, resolvePickerThemeHint } from "./runtime-request"
+  import { getPickerRuntimeRequest, resolvePickerRuntimeData, resolvePickerThemeHint, type PickerPreviewFixture } from "./runtime-request"
   import NumberRow from "./NumberRow.svelte"
-  import previewFixture from "./preview-fixture.json"
   import ToggleRow from "./ToggleRow.svelte"
 
   const isDevPreview = import.meta.env.DEV
   const params = typeof window === "undefined" ? new URLSearchParams() : new URLSearchParams(window.location.search)
   const runtimeRequest = getPickerRuntimeRequest()
-  const themeHint = resolvePickerThemeHint(params, runtimeRequest, previewFixture.theme)
-  const resolvedOpenCodeTheme = resolveOpenCodeThemeCss(themeHint)
-  const themeName = resolveTheme(resolvedOpenCodeTheme.mode)
-  const tokens = themeTokens[themeName]
-  const modelState = createModelSelectionState(previewFixture.modelSelection)
-  const setupState = createSetupState({ settings: previewFixture.setup.settings })
-  const fixtureTaskCount = previewFixture.modelSelection.tasks.length
-  const modelGroups = filteredModelGroups(modelState)
   const isPreviewWindow = isDevPreview && params.get("preview") === "1"
-  const activeView: "models" | "settings" = isPreviewWindow && params.get("view") === "settings" ? "settings" : "models"
-  const windowTitle = isDevPreview && !isPreviewWindow ? "Model Dispatch" : activeView === "settings" ? "Model Dispatch Settings" : "Model Dispatch"
-  const modelOptions = previewFixture.modelSelection.models
+  let previewFixture: PickerPreviewFixture | undefined
+  $: runtimeData = resolvePickerRuntimeData(params, runtimeRequest, previewFixture)
+  $: themeHint = resolvePickerThemeHint(params, runtimeRequest, runtimeData?.theme)
+  $: resolvedOpenCodeTheme = resolveOpenCodeThemeCss(themeHint)
+  $: themeName = resolveTheme(resolvedOpenCodeTheme.mode)
+  $: tokens = themeTokens[themeName]
+  $: modelSelection = runtimeData?.modelSelection
+  $: setup = runtimeData?.setup
+  $: modelState = createModelSelectionState(modelSelection ?? { tasks: [], models: [] })
+  $: setupState = createSetupState({ settings: setup?.settings })
+  $: taskCount = modelSelection?.tasks.length ?? 0
+  $: modelGroups = filteredModelGroups(modelState)
+  $: activeView = isPreviewWindow && params.get("view") === "settings" ? "settings" : setup && !modelSelection ? "settings" : "models"
+  $: windowTitle = isDevPreview && !isPreviewWindow ? "Model Dispatch" : activeView === "settings" ? "Model Dispatch Settings" : "Model Dispatch"
+  $: modelOptions = modelSelection?.models ?? []
   let selectedModels: Record<string, string> = {}
-  let dispatchEnabled = setupState.settings.dispatch.enabled
-  let privacyLoggingEnabled = setupState.settings.privacy.loggingEnabled
-  let batchMs = setupState.settings.dispatch.batchMs
-  let pickerTimeoutMs = setupState.settings.dispatch.pickerTimeoutMs
+  $: dispatchEnabled = setupState.settings.dispatch.enabled
+  $: privacyLoggingEnabled = setupState.settings.privacy.loggingEnabled
+  $: batchMs = setupState.settings.dispatch.batchMs
+  $: pickerTimeoutMs = setupState.settings.dispatch.pickerTimeoutMs
+
+  onMount(async () => {
+    if (!isPreviewWindow) return
+    previewFixture = (await import("./preview-fixture.json")).default
+  })
 
   async function openPreviewWindow(view: "models" | "settings") {
     if (!isDevPreview || typeof window === "undefined") return
@@ -127,10 +136,17 @@
         <header class="real-window-heading">
           <div>
             <h1 id="models-title">Choose models</h1>
-            <p>{fixtureTaskCount} queued task calls will start after selection.</p>
+            <p>{taskCount} queued task calls will start after selection.</p>
           </div>
-          <span>{fixtureTaskCount} tasks</span>
+          <span>{taskCount} tasks</span>
         </header>
+
+        {#if !runtimeData}
+          <div class="empty-state">
+            <h2>Waiting for picker request</h2>
+            <p>No runtime model-selection request has been received yet.</p>
+          </div>
+        {:else}
 
         <div class="model-list">
           <label class="model-row apply-row">
@@ -169,6 +185,7 @@
             </label>
           {/each}
         </div>
+        {/if}
 
         <footer class="window-actions">
           <button type="button" class="secondary" on:click={closePreviewWindow}>Cancel</button>
