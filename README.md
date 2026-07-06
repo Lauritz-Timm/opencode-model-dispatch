@@ -105,9 +105,16 @@ bun install
 bun test
 bun run typecheck
 bun run build
+bun run doctor:picker
+bun run dev:picker:tauri
 bun run build:picker
 bun run check:packaging
 ```
+
+Use `bun run doctor:picker` before native picker work to verify Rust, Tauri, and
+picker dependencies are available. Use `bun run dev:picker:tauri` to launch the
+native picker during development, and `bun run build:picker` to produce the
+platform release asset in `dist-picker`.
 
 Use test-first implementation. Do not skip the hard technical spikes.
 
