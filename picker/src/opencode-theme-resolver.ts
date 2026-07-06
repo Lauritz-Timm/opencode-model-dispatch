@@ -93,10 +93,6 @@ const themes: Record<string, DesktopTheme> = {
   zenburn,
 } as Record<string, DesktopTheme>
 
-export function availableOpenCodeThemeIDs(): string[] {
-  return Object.keys(themes).sort()
-}
-
 export function resolveOpenCodeThemeCss(options: ResolveOpenCodeThemeOptions = {}): ResolvedOpenCodeThemeCss {
   const themeID = normalizeThemeID(options.themeID)
   const mode = normalizeMode(options.colorScheme)

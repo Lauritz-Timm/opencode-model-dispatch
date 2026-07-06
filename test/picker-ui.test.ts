@@ -19,7 +19,7 @@ import {
   encodeJsonRpc,
 } from "../picker/src/protocol"
 import { cssVariables, themeTokens } from "../picker/src/theme"
-import { availableOpenCodeThemeIDs, resolveOpenCodeThemeCss } from "../picker/src/opencode-theme-resolver"
+import { resolveOpenCodeThemeCss } from "../picker/src/opencode-theme-resolver"
 import { resolvePickerRuntimeData, resolvePickerThemeHint } from "../picker/src/runtime-request"
 
 const models = [
@@ -240,9 +240,6 @@ describe("picker theme bridge", () => {
   })
 
   test("bundled OpenCode themes generate v1 and v2 CSS variables", () => {
-    expect(availableOpenCodeThemeIDs()).toContain("oc-2")
-    expect(availableOpenCodeThemeIDs()).toContain("nightowl")
-
     const css = resolveOpenCodeThemeCss({ themeID: "nightowl", colorScheme: "dark" })
 
     expect(css.themeID).toBe("nightowl")

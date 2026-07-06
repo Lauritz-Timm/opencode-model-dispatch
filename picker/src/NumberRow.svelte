@@ -3,7 +3,6 @@
   export let description: string
   export let value: number
   export let suffix = ""
-  export let min = 1
   export let onChange: (value: number) => void = () => {}
 
   let inputValue = String(value)
@@ -11,7 +10,7 @@
 
   function isValidNumberInput(raw: string): boolean {
     if (!/^\d+$/.test(raw)) return false
-    return Number(raw) >= min
+    return Number(raw) >= 1
   }
 
   function handleInput(raw: string) {

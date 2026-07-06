@@ -2,18 +2,17 @@
   export let label: string
   export let description: string
   export let checked = false
-  export let disabled = false
   export let onChange: (checked: boolean) => void = () => {}
 </script>
 
-<label data-component="settings-v2-row" class:disabled>
+<label data-component="settings-v2-row">
   <span data-slot="settings-v2-row-copy">
     <strong data-slot="settings-v2-row-title">{label}</strong>
     <small data-slot="settings-v2-row-description">{description}</small>
   </span>
   <span data-slot="settings-v2-row-control">
-    <span data-component="switch" data-checked={checked ? "" : undefined} data-disabled={disabled ? "" : undefined}>
-      <input data-slot="switch-input" type="checkbox" role="switch" {checked} {disabled} on:change={(event) => onChange(event.currentTarget.checked)} />
+    <span data-component="switch" data-checked={checked ? "" : undefined}>
+      <input data-slot="switch-input" type="checkbox" role="switch" {checked} on:change={(event) => onChange(event.currentTarget.checked)} />
       <span data-slot="switch-control" aria-hidden="true">
         <span data-slot="switch-thumb"></span>
       </span>
@@ -34,10 +33,6 @@
 
   [data-component="settings-v2-row"]:last-child {
     border-bottom: none;
-  }
-
-  [data-component="settings-v2-row"].disabled {
-    opacity: 0.5;
   }
 
   [data-slot="settings-v2-row-copy"] {
@@ -138,14 +133,14 @@
     transition: transform 90ms ease-out, width 90ms ease-out, border-radius 90ms, background 90ms;
   }
 
-  [data-component="switch"]:hover:not([data-disabled]) [data-slot="switch-control"] {
+  [data-component="switch"]:hover [data-slot="switch-control"] {
     background:
       linear-gradient(0deg, var(--v2-overlay-simple-overlay-hover), var(--v2-overlay-simple-overlay-hover)),
       linear-gradient(180deg, var(--v2-alpha-light-0) 0%, var(--v2-alpha-light-20) 100%),
       var(--v2-background-bg-layer-03);
   }
 
-  [data-component="switch"]:hover:not([data-disabled]) [data-slot="switch-thumb"] {
+  [data-component="switch"]:hover [data-slot="switch-thumb"] {
     width: 13px;
     border-radius: 3px;
   }
@@ -174,27 +169,15 @@
       var(--v2-grey-300);
   }
 
-  [data-component="switch"][data-checked]:hover:not([data-disabled]) [data-slot="switch-control"] {
+  [data-component="switch"][data-checked]:hover [data-slot="switch-control"] {
     background:
       linear-gradient(0deg, var(--v2-overlay-simple-overlay-contrast-hover), var(--v2-overlay-simple-overlay-contrast-hover)),
       linear-gradient(180deg, var(--v2-alpha-light-0) 0%, var(--v2-alpha-light-10) 100%),
       var(--v2-background-bg-accent);
   }
 
-  [data-component="switch"][data-checked]:hover:not([data-disabled]) [data-slot="switch-thumb"] {
+  [data-component="switch"][data-checked]:hover [data-slot="switch-thumb"] {
     transform: translateX(7px);
-  }
-
-  [data-component="switch"][data-disabled] {
-    cursor: not-allowed;
-  }
-
-  [data-component="switch"][data-disabled] [data-slot="switch-control"] {
-    opacity: 0.5;
-  }
-
-  [data-slot="switch-input"]:disabled ~ [data-slot="switch-control"] {
-    opacity: 0.5;
   }
 
   input {
