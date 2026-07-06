@@ -1,13 +1,18 @@
-import { chmod, mkdir, readdir, writeFile } from "node:fs/promises"
+import { chmod, copyFile, mkdir, readdir } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 
 const pickerRoot = fileURLToPath(new URL("../picker", import.meta.url))
 const distPickerRoot = fileURLToPath(new URL("../dist-picker", import.meta.url))
 const pickerProject = new URL("../picker/package.json", import.meta.url)
 const pickerSrc = fileURLToPath(new URL("../picker/src", import.meta.url))
+const pickerTauriSrc = fileURLToPath(new URL("../picker/src-tauri", import.meta.url))
 const pickerViteBin = new URL("../picker/node_modules/.bin/vite", import.meta.url)
 const pickerViteCmd = new URL("../picker/node_modules/.bin/vite.cmd", import.meta.url)
 const pickerViteExe = new URL("../picker/node_modules/.bin/vite.exe", import.meta.url)
+const pickerTauriBin = new URL("../picker/node_modules/.bin/tauri", import.meta.url)
+const pickerTauriCmd = new URL("../picker/node_modules/.bin/tauri.cmd", import.meta.url)
+const pickerTauriExe = new URL("../picker/node_modules/.bin/tauri.exe", import.meta.url)
+const nativeBinaryBaseName = "opencode-model-dispatch-picker"
 
 async function hasTypeScriptSource(path: string): Promise<boolean> {
   try {
@@ -25,15 +30,18 @@ async function hasTypeScriptSource(path: string): Promise<boolean> {
 }
 
 if (!(await Bun.file(pickerProject).exists())) {
-  console.log("picker build skipped: picker/package.json is not present yet")
-  await writeReleaseAsset()
-  process.exit(0)
+  console.error("picker build failed: picker/package.json is not present")
+  process.exit(1)
 }
 
 if (!(await hasTypeScriptSource(pickerSrc))) {
-  console.log("picker build skipped: picker/src has no TypeScript sources yet")
-  await writeReleaseAsset()
-  process.exit(0)
+  console.error("picker build failed: picker/src has no TypeScript sources")
+  process.exit(1)
+}
+
+if (!(await Bun.file(`${pickerTauriSrc}/Cargo.toml`).exists())) {
+  console.error("picker build failed: picker/src-tauri/Cargo.toml is not present")
+  process.exit(1)
 }
 
 if (
@@ -41,33 +49,39 @@ if (
   !(await Bun.file(pickerViteCmd).exists()) &&
   !(await Bun.file(pickerViteExe).exists())
 ) {
-  console.log("picker build skipped: picker dependencies are not installed")
-  await writeReleaseAsset()
-  process.exit(0)
+  console.error("picker build failed: picker Vite dependency is not installed")
+  process.exit(1)
 }
 
-const proc = Bun.spawn([process.execPath, "run", "build"], {
+if (
+  !(await Bun.file(pickerTauriBin).exists()) &&
+  !(await Bun.file(pickerTauriCmd).exists()) &&
+  !(await Bun.file(pickerTauriExe).exists())
+) {
+  console.error("picker build failed: picker Tauri dependency is not installed")
+  process.exit(1)
+}
+
+const proc = Bun.spawn([process.execPath, "run", "tauri", "build", "--no-bundle", "--ci"], {
   cwd: pickerRoot,
   stdout: "inherit",
   stderr: "inherit",
 })
 
 const exitCode = await proc.exited
-if (exitCode === 0) await writeReleaseAsset()
+if (exitCode === 0) await copyReleaseAsset()
 process.exit(exitCode)
 
-async function writeReleaseAsset(): Promise<void> {
+async function copyReleaseAsset(): Promise<void> {
   const platform = process.platform === "win32" ? "windows" : process.platform === "darwin" ? "macos" : process.platform
   const arch = process.arch
   const ext = platform === "windows" ? ".exe" : ""
-  const assetPattern = "picker-${platform}-${arch}${ext}"
   const assetName = `picker-${platform}-${arch}${ext}`
+  const binaryName = `${nativeBinaryBaseName}${ext}`
+  const sourcePath = `${pickerTauriSrc}/target/release/${binaryName}`
   await mkdir(distPickerRoot, { recursive: true })
-  const path = `${distPickerRoot}/${assetName}`
-  const script = platform === "windows"
-    ? `@echo off\necho ${assetPattern} placeholder: build native Tauri picker before release.\nexit /b 1\n`
-    : `#!/usr/bin/env sh\necho "${assetPattern} placeholder: build native Tauri picker before release." >&2\nexit 1\n`
-  await writeFile(path, script, "utf8")
-  if (platform !== "windows") await chmod(path, 0o755)
-  console.log(`picker release asset written to dist-picker/${assetName}`)
+  const destinationPath = `${distPickerRoot}/${assetName}`
+  await copyFile(sourcePath, destinationPath)
+  if (platform !== "windows") await chmod(destinationPath, 0o755)
+  console.log(`picker release asset copied to dist-picker/${assetName}`)
 }

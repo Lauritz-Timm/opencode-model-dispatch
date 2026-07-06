@@ -38,8 +38,9 @@ The documented download path is
 `https://github.com/Lauritz/opencode-model-dispatch/releases/download/${version}/picker-${platform}-${arch}${ext}`.
 Use `ext=.exe` on Windows and an empty extension on Linux and macOS.
 
-Until the picker app exists, release assets are a contract only; local
-development and CI skip native picker builds when `picker/src-tauri` is absent.
+Release assets are produced by `bun run build:picker`, which runs a CI-friendly
+Tauri build and copies the native binary into `dist-picker` with the expected
+platform asset name.
 
 ## Configuration
 

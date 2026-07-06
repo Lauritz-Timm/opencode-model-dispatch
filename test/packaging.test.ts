@@ -70,11 +70,17 @@ describe("packaging and release assets", () => {
     expect(await readText("scripts/dev-picker-tauri.ts")).toContain(".cargo/bin")
   })
 
-  test("build picker script creates the release asset path expected by publish workflow", async () => {
+  test("build picker script builds and copies the native Tauri release asset", async () => {
     const script = await readText("scripts/build-picker.ts")
 
     expect(script).toContain("dist-picker")
     expect(script).toContain("picker-${platform}-${arch}${ext}")
+    expect(script).toContain("tauri")
+    expect(script).toContain("build")
+    expect(script).toContain("--no-bundle")
+    expect(script).toContain("--ci")
+    expect(script).toContain("copyFile")
+    expect(script).not.toContain("placeholder")
     expect(script).toContain("vite.exe")
   })
 
