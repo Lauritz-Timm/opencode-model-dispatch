@@ -118,8 +118,8 @@
     new WebviewWindow(label, {
       url: `${url.pathname}${url.search}`,
       title: view === "models" ? "Model Dispatch Preview" : "Model Dispatch Settings Preview",
-      width: 680,
-      height: 500,
+      width: view === "models" ? 680 : 800,
+      height: view === "models" ? 500 : 560,
       center: true,
       decorations: false,
       shadow: true,

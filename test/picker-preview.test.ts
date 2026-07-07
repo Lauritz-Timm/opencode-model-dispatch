@@ -105,8 +105,8 @@ describe("picker preview fixtures", () => {
     const toggleRow = await readText("picker/src/ToggleRow.svelte")
     const numberRow = await readText("picker/src/NumberRow.svelte")
 
-    expect(app).toContain("width: 680")
-    expect(app).toContain("height: 500")
+    expect(app).toContain('width: view === "models" ? 680 : 800')
+    expect(app).toContain('height: view === "models" ? 500 : 560')
     expect(app).toContain("padding: 22px 18px 18px")
     expect(app).toContain("margin-bottom: 18px")
     expect(app).toContain("font-size: 13px")
@@ -126,9 +126,11 @@ describe("picker preview fixtures", () => {
   })
 
   test("native Tauri picker opens centered", async () => {
-    const config = await readJson<{ app: { windows: Array<{ center?: boolean; decorations?: boolean; theme?: string }> } }>("picker/src-tauri/tauri.conf.json")
+    const config = await readJson<{ app: { windows: Array<{ width?: number; height?: number; center?: boolean; decorations?: boolean; theme?: string }> } }>("picker/src-tauri/tauri.conf.json")
     const main = await readText("picker/src-tauri/src/main.rs")
 
+    expect(config.app.windows[0]?.width).toBe(680)
+    expect(config.app.windows[0]?.height).toBe(500)
     expect(config.app.windows[0]?.center).toBe(true)
     expect(config.app.windows[0]?.decorations).toBe(false)
     expect(config.app.windows[0]?.theme).toBe("Dark")
