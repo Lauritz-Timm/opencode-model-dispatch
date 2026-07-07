@@ -118,8 +118,8 @@
     new WebviewWindow(label, {
       url: `${url.pathname}${url.search}`,
       title: view === "models" ? "Model Dispatch Preview" : "Model Dispatch Settings Preview",
-      width: view === "models" ? 680 : 980,
-      height: view === "models" ? 500 : 620,
+      width: 680,
+      height: 500,
       center: true,
       decorations: false,
       shadow: true,
@@ -628,14 +628,14 @@
   .settings-main {
     width: min(680px, 100%);
     margin: 0 auto;
-    padding: 40px 22px 22px;
+    padding: 22px 18px 18px;
     overflow-y: auto;
     flex: 1;
   }
 
   .settings-title {
-    margin-bottom: 36px;
-    font-size: 15px;
+    margin-bottom: 18px;
+    font-size: 13px;
     font-weight: 640;
     line-height: 1;
   }
@@ -643,7 +643,7 @@
   .settings-panel {
     overflow: hidden;
     border-radius: 8px;
-    padding-inline: 20px;
+    padding-inline: 14px;
     background: var(--v2-background-bg-base);
     box-shadow: inset 0 0 0 0.5px var(--v2-border-border-muted);
   }
@@ -671,7 +671,7 @@
   }
 
   .settings-actions {
-    margin-top: 24px;
+    margin-top: 14px;
   }
 
   .picker-window .window-actions {

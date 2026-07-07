@@ -100,6 +100,31 @@ describe("picker preview fixtures", () => {
     expect(dts).toContain("ImportMetaEnv")
   })
 
+  test("settings preview keeps compact OpenCode sizing", async () => {
+    const app = await readText("picker/src/App.svelte")
+    const toggleRow = await readText("picker/src/ToggleRow.svelte")
+    const numberRow = await readText("picker/src/NumberRow.svelte")
+
+    expect(app).toContain("width: 680")
+    expect(app).toContain("height: 500")
+    expect(app).toContain("padding: 22px 18px 18px")
+    expect(app).toContain("margin-bottom: 18px")
+    expect(app).toContain("font-size: 13px")
+    expect(app).toContain("padding-inline: 14px")
+    expect(app).toContain(".settings-actions")
+    expect(app).toContain("margin-top: 14px")
+    expect(toggleRow).toContain("gap: 10px")
+    expect(toggleRow).toContain("padding-block: 13px")
+    expect(toggleRow).toContain("font-size: 12px")
+    expect(toggleRow).toContain("min-width: 44px")
+    expect(toggleRow).toContain("min-height: 32px")
+    expect(numberRow).toContain("gap: 10px")
+    expect(numberRow).toContain("padding-block: 13px")
+    expect(numberRow).toContain("font-size: 12px")
+    expect(numberRow).toContain("width: 136px")
+    expect(numberRow).toContain("min-height: 32px")
+  })
+
   test("native Tauri picker opens centered", async () => {
     const config = await readJson<{ app: { windows: Array<{ center?: boolean; decorations?: boolean; theme?: string }> } }>("picker/src-tauri/tauri.conf.json")
     const main = await readText("picker/src-tauri/src/main.rs")
