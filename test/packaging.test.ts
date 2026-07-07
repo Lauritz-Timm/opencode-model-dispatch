@@ -28,6 +28,7 @@ describe("packaging and release assets", () => {
     expect(pkg.scripts?.prepare).toBeUndefined()
     expect(pkg.scripts?.prepublishOnly).not.toContain("tauri")
     expect(pkg.files).toContain("dist")
+    expect(pkg.files).toContain("assets")
     expect(pkg.files).toContain("bin")
     expect(pkg.files).toContain("scripts")
     expect(pkg.bin?.["opencode-model-dispatch-picker"]).toBe("./bin/picker.js")

@@ -33,6 +33,7 @@
   },
   "files": [
     "dist",
+    "assets",
     "bin",
     "scripts",
     "docs",

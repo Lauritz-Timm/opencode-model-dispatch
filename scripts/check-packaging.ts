@@ -38,6 +38,7 @@ const pkg = await readJson<PackageJson>("package.json")
 const readme = await readText("README.md")
 
 expectIncludes(pkg.files, "dist", "package files")
+expectIncludes(pkg.files, "assets", "package files")
 expectIncludes(pkg.files, "bin", "package files")
 expectIncludes(pkg.files, "scripts", "package files")
 if (pkg.files?.includes("picker/src-tauri")) fail("package files must not include picker/src-tauri")
