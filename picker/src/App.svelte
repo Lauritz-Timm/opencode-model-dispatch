@@ -2,7 +2,7 @@
   import { onMount } from "svelte"
   import { WebviewWindow } from "@tauri-apps/api/webviewWindow"
   import { getCurrentWindow } from "@tauri-apps/api/window"
-  import { buildModelSelectionSubmitParams, createModelSelectionState, filteredModelGroups, modelSelectionSubmitDisabled, type ModelRef } from "./model-selection-reducer"
+  import { buildModelSelectionSubmitParams, createModelSelectionState, filteredModelGroups, modelSelectionSubmitDisabled, shouldSubmitModelSelectionFromKeyboard, type ModelRef } from "./model-selection-reducer"
   import { createSetupState } from "./setup-reducer"
   import { resolveOpenCodeThemeCss } from "./opencode-theme-resolver"
   import { cssVariables, resolveTheme, themeTokens } from "./theme"
@@ -84,9 +84,22 @@
   }
 
   function handleKeydown(event: KeyboardEvent) {
-    if (event.key !== "Escape") return
+    if (event.key === "Escape") {
+      event.preventDefault()
+      void cancelPicker()
+      return
+    }
+
+    const target = event.target instanceof HTMLElement ? event.target : undefined
+    if (!shouldSubmitModelSelectionFromKeyboard({
+      key: event.key,
+      defaultPrevented: event.defaultPrevented,
+      targetTagName: target?.tagName,
+      targetIsContentEditable: target?.isContentEditable,
+    }, currentModelSelectionState())) return
+
     event.preventDefault()
-    void cancelPicker()
+    void submitModelSelection()
   }
 
   async function openPreviewWindow(view: "models" | "settings") {
@@ -442,11 +455,30 @@
     font-size: 13px;
     font-weight: 530;
     cursor: pointer;
+    transition: background-color 120ms ease-out, border-color 120ms ease-out, color 120ms ease-out, opacity 120ms ease-out;
   }
 
   .launcher-actions button:hover,
-  .window-actions button:hover {
+  .window-actions button:hover:not(:disabled) {
     background: var(--v2-background-bg-layer-03);
+    border-color: var(--v2-border-border-base);
+  }
+
+  .launcher-actions button:active,
+  .window-actions button:active:not(:disabled) {
+    background: var(--v2-background-bg-layer-02);
+    transform: translateY(1px);
+  }
+
+  .launcher-actions button:focus-visible,
+  .window-actions button:focus-visible {
+    outline: 1.5px solid var(--v2-border-border-active, var(--opencode-accent));
+    outline-offset: 2px;
+  }
+
+  .window-actions button:disabled {
+    cursor: not-allowed;
+    opacity: 0.42;
   }
 
   .real-window-heading {
@@ -501,10 +533,16 @@
     min-height: 44px;
     padding: 7px 8px 7px 10px;
     border-bottom: 0.5px solid var(--v2-border-border-base);
+    transition: background-color 120ms ease-out, box-shadow 120ms ease-out;
   }
 
   .model-row:hover {
     background: var(--v2-background-bg-layer-02, var(--v2-background-bg-layer-03));
+  }
+
+  .model-row:focus-within {
+    background: var(--v2-background-bg-layer-02, var(--v2-background-bg-layer-03));
+    box-shadow: inset 0 0 0 1px var(--v2-border-border-active, var(--opencode-accent));
   }
 
   .model-row:last-child {
@@ -538,16 +576,40 @@
     max-width: 100%;
     border: 0.5px solid var(--v2-border-border-muted);
     border-radius: 6px;
-    padding: 6px 8px;
-    background: var(--v2-background-bg-base);
+    padding: 6px 28px 6px 8px;
+    appearance: none;
+    background:
+      linear-gradient(45deg, transparent 50%, var(--v2-text-text-muted) 50%) calc(100% - 14px) 50% / 5px 5px no-repeat,
+      linear-gradient(135deg, var(--v2-text-text-muted) 50%, transparent 50%) calc(100% - 9px) 50% / 5px 5px no-repeat,
+      var(--v2-background-bg-base);
     color: var(--v2-text-text-base);
     font: inherit;
     font-size: 12px;
+    cursor: pointer;
+    transition: background-color 120ms ease-out, border-color 120ms ease-out, box-shadow 120ms ease-out;
+  }
+
+  .model-row select:hover {
+    border-color: var(--v2-border-border-base);
+    background:
+      linear-gradient(45deg, transparent 50%, var(--v2-text-text-muted) 50%) calc(100% - 14px) 50% / 5px 5px no-repeat,
+      linear-gradient(135deg, var(--v2-text-text-muted) 50%, transparent 50%) calc(100% - 9px) 50% / 5px 5px no-repeat,
+      var(--v2-background-bg-layer-01);
+  }
+
+  .model-row select:active {
+    border-color: var(--v2-border-border-active, var(--opencode-accent));
   }
 
   .model-row select:focus-visible {
-    outline: 1px solid var(--v2-border-border-active, var(--opencode-accent));
+    outline: 1.5px solid var(--v2-border-border-active, var(--opencode-accent));
     outline-offset: 1px;
+    border-color: var(--v2-border-border-active, var(--opencode-accent));
+  }
+
+  .model-row select:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
   }
 
   .apply-row {
@@ -627,6 +689,14 @@
   .window-actions .primary {
     background: var(--v2-text-text-base);
     color: var(--v2-background-bg-base);
+  }
+
+  .window-actions .primary:hover:not(:disabled) {
+    background: var(--v2-text-text-muted);
+  }
+
+  .window-actions .primary:active:not(:disabled) {
+    background: var(--v2-text-text-subtle, var(--v2-text-text-muted));
   }
 
   .window-actions .secondary {

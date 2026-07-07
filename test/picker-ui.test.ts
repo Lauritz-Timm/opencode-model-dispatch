@@ -6,6 +6,7 @@ import {
   createModelSelectionState,
   filteredModelGroups,
   modelSelectionSubmitDisabled,
+  shouldSubmitModelSelectionFromKeyboard,
   type ModelSelectionState,
 } from "../picker/src/model-selection-reducer"
 import {
@@ -115,6 +116,19 @@ describe("picker model selection reducer", () => {
     const dropdown = applyModelSelectionAction(rowFocused, { type: "openDropdown", target: "task-a" })
     expect(applyModelSelectionAction(dropdown, { type: "key", key: "Escape", shift: true }).dropdown.openFor).toBeUndefined()
     expect(applyModelSelectionAction(rowFocused, { type: "key", key: "ArrowUp" }).focus).toBe("apply-to-all")
+  })
+
+  test("global Enter submits only when valid and not inside native controls", () => {
+    const ready = applyModelSelectionAction(modelState(), {
+      type: "selectModel",
+      target: "apply-to-all",
+      model: { providerID: "openai", modelID: "gpt-4.1" },
+    })
+
+    expect(shouldSubmitModelSelectionFromKeyboard({ key: "Enter", targetTagName: "BODY" }, ready)).toBe(true)
+    expect(shouldSubmitModelSelectionFromKeyboard({ key: "Enter", targetTagName: "SELECT" }, ready)).toBe(false)
+    expect(shouldSubmitModelSelectionFromKeyboard({ key: "Enter", targetTagName: "BUTTON" }, ready)).toBe(false)
+    expect(shouldSubmitModelSelectionFromKeyboard({ key: "Enter", targetTagName: "BODY" }, modelState())).toBe(false)
   })
 
   test("builds backend submit params from task selections in row order", () => {

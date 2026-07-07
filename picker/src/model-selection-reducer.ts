@@ -43,6 +43,13 @@ export interface ModelSelectionState {
   commands: ModelSelectionCommand[]
 }
 
+export interface ModelSelectionKeyboardEventLike {
+  key: string
+  targetTagName?: string
+  targetIsContentEditable?: boolean
+  defaultPrevented?: boolean
+}
+
 export type ModelSelectionAction =
   | { type: "selectModel"; target: string; model: ModelRef }
   | { type: "openDropdown"; target: string }
@@ -114,6 +121,21 @@ export function buildModelSelectionSubmitParams(state: ModelSelectionState): Mod
       providerID: state.selections[row.id]!.providerID,
       modelID: state.selections[row.id]!.modelID,
     })),
+  }
+}
+
+export function shouldSubmitModelSelectionFromKeyboard(event: ModelSelectionKeyboardEventLike, state: ModelSelectionState): boolean {
+  if (event.key !== "Enter" || event.defaultPrevented || modelSelectionSubmitDisabled(state)) return false
+  if (event.targetIsContentEditable) return false
+
+  switch (event.targetTagName?.toUpperCase()) {
+    case "BUTTON":
+    case "INPUT":
+    case "SELECT":
+    case "TEXTAREA":
+      return false
+    default:
+      return true
   }
 }
 
