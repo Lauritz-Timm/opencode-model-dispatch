@@ -68,4 +68,17 @@ describe("picker Svelte and OpenCode token contract", () => {
     expect(numberRow).toContain("isValidNumberInput")
     expect(numberRow).not.toContain('type="number"')
   })
+
+  test("model picker uses a custom OpenCode-style model dropdown instead of native selects", async () => {
+    const app = await readText("picker/src/App.svelte")
+    const modelSelect = await readText("picker/src/ModelSelect.svelte")
+
+    expect(app).toContain("ModelSelect")
+    expect(app).not.toContain("<select")
+    expect(modelSelect).toContain('role="listbox"')
+    expect(modelSelect).toContain('aria-expanded={open}')
+    expect(modelSelect).toContain('placeholder="Search models"')
+    expect(modelSelect).toContain("provider-heading")
+    expect(modelSelect).toContain("selected-check")
+  })
 })

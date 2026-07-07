@@ -8,6 +8,7 @@
   import { cssVariables, resolveTheme, themeTokens } from "./theme"
   import { getPickerRuntimeRequest, resolvePickerRuntimeData, resolvePickerThemeHint, type PickerPreviewFixture } from "./runtime-request"
   import { createTauriPickerRuntimeAdapter, type PickerRuntimeAdapter } from "./runtime-rpc"
+  import ModelSelect from "./ModelSelect.svelte"
   import NumberRow from "./NumberRow.svelte"
   import ToggleRow from "./ToggleRow.svelte"
 
@@ -31,6 +32,7 @@
   $: windowTitle = isDevPreview && !isPreviewWindow ? "Model Dispatch" : activeView === "settings" ? "Model Dispatch Settings" : "Model Dispatch"
   $: modelOptions = modelSelection?.models ?? []
   let selectedModels: Record<string, string> = {}
+  let applyToAllModel = ""
   let runtimeAdapter: PickerRuntimeAdapter | undefined
   $: dispatchEnabled = setupState.settings.dispatch.enabled
   $: privacyLoggingEnabled = setupState.settings.privacy.loggingEnabled
@@ -150,12 +152,8 @@
     void getCurrentWindow().startDragging()
   }
 
-  function selectedModelLabel(taskID: string): string {
-    const selected = modelOptions.find((model) => `${model.providerID}/${model.modelID}` === selectedModels[taskID])
-    return selected ? `${selected.providerName} · ${selected.displayName}` : "Select model"
-  }
-
   function setAllModels(value: string) {
+    applyToAllModel = value
     selectedModels = Object.fromEntries(modelState.rows.map((row) => [row.id, value]))
   }
 </script>
@@ -213,40 +211,22 @@
         {:else}
 
         <div class="model-list">
-          <label class="model-row apply-row">
-            <span>
+          <div class="model-row apply-row">
+            <span class="model-row-copy">
               <strong>Apply to all</strong>
               <small>Set one model for this batch.</small>
             </span>
-            <select on:change={(event) => setAllModels(event.currentTarget.value)}>
-              <option value="">Select model</option>
-              {#each modelGroups as group}
-                <optgroup label={group.providerName}>
-                  {#each group.models as model}
-                    <option value={`${model.providerID}/${model.modelID}`}>{model.displayName}</option>
-                  {/each}
-                </optgroup>
-              {/each}
-            </select>
-          </label>
+            <ModelSelect bind:value={applyToAllModel} groups={modelGroups} ariaLabel="Apply model to all tasks" onChange={setAllModels} />
+          </div>
 
           {#each modelState.rows as row}
-            <label class="model-row">
-              <span>
+            <div class="model-row">
+              <span class="model-row-copy">
                 <strong>{row.agentType}</strong>
                 <small>{row.description}</small>
               </span>
-              <select bind:value={selectedModels[row.id]} aria-label={`Model for ${row.agentType}`}>
-                <option value="">{selectedModelLabel(row.id)}</option>
-                {#each modelGroups as group}
-                  <optgroup label={group.providerName}>
-                    {#each group.models as model}
-                      <option value={`${model.providerID}/${model.modelID}`}>{model.displayName}</option>
-                    {/each}
-                  </optgroup>
-                {/each}
-              </select>
-            </label>
+              <ModelSelect bind:value={selectedModels[row.id]} groups={modelGroups} ariaLabel={`Model for ${row.agentType}`} />
+            </div>
           {/each}
         </div>
         {/if}
@@ -549,7 +529,7 @@
     border-bottom: 0;
   }
 
-  .model-row span {
+  .model-row-copy {
     display: flex;
     min-width: 0;
     flex: 1;
@@ -569,47 +549,6 @@
     font-size: 11px;
     font-weight: 440;
     line-height: 1.2;
-  }
-
-  .model-row select {
-    width: 220px;
-    max-width: 100%;
-    border: 0.5px solid var(--v2-border-border-muted);
-    border-radius: 6px;
-    padding: 6px 28px 6px 8px;
-    appearance: none;
-    background:
-      linear-gradient(45deg, transparent 50%, var(--v2-text-text-muted) 50%) calc(100% - 14px) 50% / 5px 5px no-repeat,
-      linear-gradient(135deg, var(--v2-text-text-muted) 50%, transparent 50%) calc(100% - 9px) 50% / 5px 5px no-repeat,
-      var(--v2-background-bg-base);
-    color: var(--v2-text-text-base);
-    font: inherit;
-    font-size: 12px;
-    cursor: pointer;
-    transition: background-color 120ms ease-out, border-color 120ms ease-out, box-shadow 120ms ease-out;
-  }
-
-  .model-row select:hover {
-    border-color: var(--v2-border-border-base);
-    background:
-      linear-gradient(45deg, transparent 50%, var(--v2-text-text-muted) 50%) calc(100% - 14px) 50% / 5px 5px no-repeat,
-      linear-gradient(135deg, var(--v2-text-text-muted) 50%, transparent 50%) calc(100% - 9px) 50% / 5px 5px no-repeat,
-      var(--v2-background-bg-layer-01);
-  }
-
-  .model-row select:active {
-    border-color: var(--v2-border-border-active, var(--opencode-accent));
-  }
-
-  .model-row select:focus-visible {
-    outline: 1.5px solid var(--v2-border-border-active, var(--opencode-accent));
-    outline-offset: 1px;
-    border-color: var(--v2-border-border-active, var(--opencode-accent));
-  }
-
-  .model-row select:disabled {
-    cursor: not-allowed;
-    opacity: 0.45;
   }
 
   .apply-row {
@@ -653,7 +592,7 @@
       flex-wrap: wrap;
     }
 
-    .model-row select {
+    .model-row :global(.model-select) {
       width: 100%;
     }
 
