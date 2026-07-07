@@ -105,8 +105,8 @@
     new WebviewWindow(label, {
       url: `${url.pathname}${url.search}`,
       title: view === "models" ? "Model Dispatch Preview" : "Model Dispatch Settings Preview",
-      width: view === "models" ? 760 : 980,
-      height: view === "models" ? 560 : 620,
+      width: view === "models" ? 680 : 980,
+      height: view === "models" ? 500 : 620,
       center: true,
       decorations: false,
       shadow: true,
@@ -187,7 +187,7 @@
         <header class="real-window-heading">
           <div>
             <h1 id="models-title">Choose models</h1>
-            <p>{taskCount} queued task calls will start after selection.</p>
+            <p>{taskCount} queued task calls</p>
           </div>
           <span>{taskCount} tasks</span>
         </header>
@@ -203,7 +203,7 @@
           <label class="model-row apply-row">
             <span>
               <strong>Apply to all</strong>
-              <small>Use one model for every task in this batch.</small>
+              <small>Set one model for this batch.</small>
             </span>
             <select on:change={(event) => setAllModels(event.currentTarget.value)}>
               <option value="">Select model</option>
@@ -451,34 +451,29 @@
 
   .real-window-heading {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
-    gap: 18px;
-    margin-bottom: 18px;
+    gap: 12px;
+    margin-bottom: 10px;
   }
 
-  .real-window-heading h1,
-  .settings-title {
+  .real-window-heading h1 {
     margin: 0;
-    font-size: 15px;
-    font-weight: 640;
+    font-size: 13px;
+    font-weight: 560;
     line-height: 1;
   }
 
   .real-window-heading p {
-    margin: 8px 0 0;
+    margin: 5px 0 0;
     color: var(--v2-text-text-muted);
-    font-size: 12px;
+    font-size: 11px;
   }
 
   .real-window-heading > span {
-    border-radius: 999px;
-    padding: 5px 9px;
-    background: color-mix(in oklch, var(--v2-text-text-accent), transparent 84%);
-    color: var(--v2-text-text-accent);
-    font-size: 12px;
-    font-weight: 700;
-    text-transform: uppercase;
+    color: var(--v2-text-text-muted);
+    font-size: 11px;
+    font-weight: 520;
   }
 
   .picker-window {
@@ -487,25 +482,29 @@
     flex: 1;
     flex-direction: column;
     overflow: auto;
-    padding: 22px;
-    background: var(--v2-background-bg-layer-01);
+    padding: 14px;
+    background: var(--v2-background-bg-base);
   }
 
   .model-list {
     overflow: hidden;
-    border-radius: 8px;
-    padding-inline: 20px;
-    background: var(--v2-background-bg-base);
-    box-shadow: inset 0 0 0 0.5px var(--v2-border-border-muted);
+    border: 0.5px solid var(--v2-border-border-muted);
+    border-radius: 6px;
+    background: var(--v2-background-bg-layer-01);
   }
 
   .model-row {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
-    gap: 16px;
-    padding-block: 20px;
+    gap: 12px;
+    min-height: 44px;
+    padding: 7px 8px 7px 10px;
     border-bottom: 0.5px solid var(--v2-border-border-base);
+  }
+
+  .model-row:hover {
+    background: var(--v2-background-bg-layer-02, var(--v2-background-bg-layer-03));
   }
 
   .model-row:last-child {
@@ -517,12 +516,12 @@
     min-width: 0;
     flex: 1;
     flex-direction: column;
-    gap: 8px;
+    gap: 3px;
   }
 
   .model-row strong {
-    font-size: 13px;
-    font-weight: 530;
+    font-size: 12px;
+    font-weight: 540;
     line-height: 1;
     color: var(--v2-text-text-base);
   }
@@ -531,23 +530,28 @@
     color: var(--v2-text-text-muted);
     font-size: 11px;
     font-weight: 440;
-    line-height: 1.25;
+    line-height: 1.2;
   }
 
   .model-row select {
-    width: 240px;
+    width: 220px;
     max-width: 100%;
     border: 0.5px solid var(--v2-border-border-muted);
-    border-radius: 8px;
-    padding: 9px 10px;
-    background: var(--v2-background-bg-layer-01);
+    border-radius: 6px;
+    padding: 6px 8px;
+    background: var(--v2-background-bg-base);
     color: var(--v2-text-text-base);
     font: inherit;
     font-size: 12px;
   }
 
+  .model-row select:focus-visible {
+    outline: 1px solid var(--v2-border-border-active, var(--opencode-accent));
+    outline-offset: 1px;
+  }
+
   .apply-row {
-    background: color-mix(in oklch, var(--v2-background-bg-layer-03), transparent 52%);
+    background: color-mix(in oklch, var(--v2-background-bg-layer-03), transparent 68%);
   }
 
   .settings-window {
@@ -569,6 +573,9 @@
 
   .settings-title {
     margin-bottom: 36px;
+    font-size: 15px;
+    font-weight: 640;
+    line-height: 1;
   }
 
   .settings-panel {
@@ -580,6 +587,14 @@
   }
 
   @media (max-width: 720px) {
+    .model-row {
+      flex-wrap: wrap;
+    }
+
+    .model-row select {
+      width: 100%;
+    }
+
     .settings-main {
       padding: 18px;
     }
@@ -595,6 +610,18 @@
 
   .settings-actions {
     margin-top: 24px;
+  }
+
+  .picker-window .window-actions {
+    border-top: 0.5px solid var(--v2-border-border-muted);
+    margin-top: 12px;
+    padding-top: 10px;
+  }
+
+  .picker-window .window-actions button {
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-size: 12px;
   }
 
   .window-actions .primary {
