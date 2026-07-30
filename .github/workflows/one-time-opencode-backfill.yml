@@ -1,7 +1,9 @@
 name: One-time OpenCode 1.x backfill
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - "codex/opencode-1x-backfill-20260730"
 
 permissions:
   contents: read
