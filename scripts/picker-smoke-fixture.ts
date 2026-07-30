@@ -9,6 +9,8 @@ interface NativePickerSmokeRequest extends BackendPickerRequestInput {
   theme: { colorScheme: string }
 }
 
+export const PICKER_SMOKE_STARTUP_TIMEOUT_MS = 60_000
+
 const nativePickerSmokeCatalog: BackendPickerRequestInput["catalog"] = [{
     providerID: "openai",
     providerName: "OpenAI",
@@ -33,7 +35,7 @@ const nativePickerSmokeCatalog: BackendPickerRequestInput["catalog"] = [{
 export const nativePickerSmokeRequest: NativePickerSmokeRequest = {
   batchID: "native-gui-smoke",
   sessionID: "native-gui-smoke",
-  timeoutMs: 20_000,
+  timeoutMs: PICKER_SMOKE_STARTUP_TIMEOUT_MS,
   catalog: nativePickerSmokeCatalog,
   applyToAllCatalog: nativePickerSmokeCatalog,
   rows: [

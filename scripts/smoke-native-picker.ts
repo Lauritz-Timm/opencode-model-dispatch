@@ -2,7 +2,11 @@ import { access } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 
 import { launchPickerProcess } from "../src/picker-process"
-import { assertNativePickerSmokePayload, nativePickerSmokeRequest } from "./picker-smoke-fixture"
+import {
+  assertNativePickerSmokePayload,
+  nativePickerSmokeRequest,
+  PICKER_SMOKE_STARTUP_TIMEOUT_MS,
+} from "./picker-smoke-fixture"
 
 const platform = process.platform === "win32" ? "windows" : process.platform === "darwin" ? "macos" : process.platform
 const extension = platform === "windows" ? ".exe" : ""
@@ -17,7 +21,7 @@ console.log(
 
 const launched = await launchPickerProcess({
   env: { OPENCODE_MODEL_DISPATCH_PICKER: binary },
-  timeoutMs: 20_000,
+  timeoutMs: PICKER_SMOKE_STARTUP_TIMEOUT_MS,
   request: nativePickerSmokeRequest,
 })
 

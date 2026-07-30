@@ -2,7 +2,11 @@ import { access } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 
 import { launchPickerProcess } from "../src/picker-process"
-import { assertNativePickerSmokePayload, nativePickerSmokeRequest } from "./picker-smoke-fixture"
+import {
+  assertNativePickerSmokePayload,
+  nativePickerSmokeRequest,
+  PICKER_SMOKE_STARTUP_TIMEOUT_MS,
+} from "./picker-smoke-fixture"
 
 if (process.platform !== "linux") {
   throw new Error("Automated native GUI smoke currently requires Linux/X11; use bun run test:gui on other platforms")
@@ -18,7 +22,7 @@ await Promise.all([access(binary), assertCommandAvailable(xdotool)])
 
 const launched = await launchPickerProcess({
   env: { OPENCODE_MODEL_DISPATCH_PICKER: binary },
-  timeoutMs: 20_000,
+  timeoutMs: PICKER_SMOKE_STARTUP_TIMEOUT_MS,
   request: nativePickerSmokeRequest,
 })
 if (launched.kind === "technical_failure") throw new Error(launched.reason)

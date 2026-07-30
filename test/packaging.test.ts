@@ -313,6 +313,7 @@ describe("packaging and release assets", () => {
 
   test("CI validates plugin tests, Node consumers, typecheck, picker build, and packaging checks", async () => {
     const workflow = await readText(".github/workflows/ci.yml")
+    const headlessWrapper = await readText("scripts/run-with-openbox.sh")
     const nodeConsumer = await readText("scripts/test-node-consumer.mjs")
     const nodeConsumerJob = workflow.slice(
       workflow.indexOf("\n  node-consumer:"),
@@ -354,6 +355,11 @@ describe("packaging and release assets", () => {
     expect(workflow).toContain("libwebkit2gtk-4.1-dev")
     expect(workflow).toContain("smoke-native-picker-auto.ts")
     expect(workflow).toContain("bun run test:package:native:tui")
+    expect(workflow).toContain("bash scripts/run-with-openbox.sh")
+    expect(workflow).toContain("x11-utils")
+    expect(workflow).toContain('LIBGL_ALWAYS_SOFTWARE: "1"')
+    expect(workflow).toContain('WEBKIT_DISABLE_COMPOSITING_MODE: "1"')
+    expect(workflow).toContain('WEBKIT_DISABLE_DMABUF_RENDERER: "1"')
     expect(workflow).toContain("xdotool")
     expect(workflow).toContain("runs-on: ubuntu-22.04")
     expect(arm64PickerJob).toContain("runs-on: ubuntu-22.04-arm")
@@ -367,6 +373,10 @@ describe("packaging and release assets", () => {
     expect(arm64PickerJob).toContain("bun run test:package:native:tui")
     expect(arm64PickerJob).not.toContain("continue-on-error")
     expect(workflow).not.toContain("- run: bun install\n        working-directory: picker")
+    expect(headlessWrapper).toContain("openbox --sm-disable")
+    expect(headlessWrapper).toContain("_NET_SUPPORTING_WM_CHECK")
+    expect(headlessWrapper).toContain('kill -0 "$openbox_pid"')
+    expect(headlessWrapper).toContain('"$@"')
   })
 
   test("exact-tarball smoke launches the installed npm wrapper before the native picker", async () => {
@@ -530,6 +540,10 @@ describe("packaging and release assets", () => {
     expect(workflow).not.toContain("secrets.NPM_TOKEN")
     expect(unsignedPickerJob).toContain("actions/checkout@")
     expect(unsignedPickerJob).toContain("bun run build:picker")
+    expect(unsignedPickerJob).toContain("bash scripts/run-with-openbox.sh")
+    expect(unsignedPickerJob).toContain(
+      'WEBKIT_DISABLE_DMABUF_RENDERER: "1"',
+    )
     expect(unsignedPickerJob).toContain(
       "cargo test --manifest-path picker/src-tauri/Cargo.toml --locked",
     )
@@ -563,6 +577,10 @@ describe("packaging and release assets", () => {
     expect(linuxIntegrationJob).toContain("opencode-ai@1.18.7")
     expect(linuxIntegrationJob).toContain("bun run test:package:native:opencode")
     expect(linuxIntegrationJob).toContain("bun run test:package:native:tui")
+    expect(linuxIntegrationJob).toContain("bash scripts/run-with-openbox.sh")
+    expect(linuxIntegrationJob).toContain(
+      'WEBKIT_DISABLE_COMPOSITING_MODE: "1"',
+    )
     expect(linuxIntegrationJob).not.toContain("actions/upload-artifact@")
     expect(unsignedPickerJob).not.toContain("${{ secrets.")
     expect(macosSigningJob).toContain("name: picker-unsigned-macos-arm64")

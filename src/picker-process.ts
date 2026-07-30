@@ -76,6 +76,9 @@ const DEFAULT_TIMEOUT_MS = 20000
 const DEFAULT_DECISION_TIMEOUT_MS = 10 * 60 * 1000
 const DEFAULT_BINARY_ROOT = fileURLToPath(new URL("../bin/", import.meta.url))
 export const MAX_PICKER_RPC_LINE_BYTES = 4 * 1024 * 1024
+export const MAX_PICKER_STDERR_DIAGNOSTIC_CHARS = 8192
+const UNSAFE_DIAGNOSTIC_CHARACTER_PATTERN =
+  /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]/gu
 const DEFAULT_TIMERS: PickerTimers = {
   setTimeout: (callback, delay) => {
     const handle = setTimeout(callback, delay)
@@ -179,21 +182,29 @@ export function launchPickerProcess(options: LaunchPickerProcessOptions = {}): P
   }
   if (pickerProcess.stderr) {
     void drainStderr(pickerProcess.stderr, (chunk) => {
-      stderr = `${stderr}${chunk}`.slice(-8192)
+      stderr = `${stderr}${chunk}`.slice(
+        -MAX_PICKER_STDERR_DIAGNOSTIC_CHARS,
+      )
     })
   }
 
   timeout = timers.setTimeout(() => {
     terminate()
-    settleLaunch(technicalFailure(`Picker startup timeout after ${timeoutMs}ms`))
+    settleLaunch(technicalFailureWithStderr(
+      `Picker startup timeout after ${timeoutMs}ms`,
+      stderr,
+    ))
   }, timeoutMs)
 
   pickerProcess.exited.then(
-    (code) => fail(technicalFailure(
-      `Picker process exited before decision: ${String(code)}${stderr.trim() ? ` (${stderr.trim()})` : ""}`,
-      stderr.trim() || undefined,
+    (code) => fail(technicalFailureWithStderr(
+      `Picker process exited before decision: ${String(code)}`,
+      stderr,
     )),
-    (error) => fail(technicalFailure(`Picker process exited before decision: ${(error as Error).message}`)),
+    (error) => fail(technicalFailureWithStderr(
+      `Picker process exited before decision: ${(error as Error).message}`,
+      stderr,
+    )),
   )
 
   readStdout(pickerProcess.stdout, (message) => {
@@ -282,6 +293,21 @@ async function drainStderr(
     }
   } catch {
     // Stderr is diagnostic only; stdout JSON-RPC remains authoritative.
+  }
+}
+
+function technicalFailureWithStderr(
+  reason: string,
+  stderr: string,
+): TechnicalFailure {
+  const diagnostic = stderr
+    .replace(UNSAFE_DIAGNOSTIC_CHARACTER_PATTERN, " ")
+    .replace(/\s+/gu, " ")
+    .trim()
+  return {
+    kind: "technical_failure",
+    reason: `${reason}${diagnostic ? ` (${diagnostic})` : ""}`,
+    ...(diagnostic ? { raw: diagnostic } : {}),
   }
 }
 

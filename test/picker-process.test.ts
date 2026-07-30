@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test"
 import {
   launchPickerProcess,
   MAX_PICKER_RPC_LINE_BYTES,
+  MAX_PICKER_STDERR_DIAGNOSTIC_CHARS,
   resolvePickerBinaryPath,
 } from "../src/picker-process"
 
@@ -301,6 +302,40 @@ describe("picker process manager", () => {
       reason: expect.stringContaining("timeout"),
     })
     expect(kills).toBe(1)
+  })
+
+  test("includes bounded sanitized stderr when startup times out", async () => {
+    const stdout = createStdout()
+    const stderr = createStdout()
+    const timers = new ManualTimers()
+    const launch = launchPickerProcess({
+      timers,
+      spawn() {
+        return {
+          stdout: stdout.stream,
+          stderr: stderr.stream,
+          exited: new Promise<number>(() => {}),
+        }
+      },
+    })
+
+    stderr.send(
+      `discarded-marker-${"x".repeat(MAX_PICKER_STDERR_DIAGNOSTIC_CHARS)}\r\nwebkit\u0000 initialization\u202e failed`,
+    )
+    await Promise.resolve()
+    timers.fireAll()
+
+    const failure = await launch
+    expect(failure.kind).toBe("technical_failure")
+    if (failure.kind !== "technical_failure") return
+    expect(failure.reason).toContain("Picker startup timeout after 20000ms")
+    expect(failure.reason).toContain("webkit initialization failed")
+    expect(failure.reason).not.toContain("discarded-marker")
+    expect(failure.raw).toContain("webkit initialization failed")
+    expect(failure.raw?.length).toBeLessThanOrEqual(
+      MAX_PICKER_STDERR_DIAGNOSTIC_CHARS,
+    )
+    expect(failure.raw).not.toMatch(/[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]/u)
   })
 
   test("treats missing binary as a technical failure", async () => {

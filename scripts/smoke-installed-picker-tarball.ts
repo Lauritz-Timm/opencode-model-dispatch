@@ -13,6 +13,7 @@ import { Readable } from "node:stream"
 import { pathToFileURL } from "node:url"
 
 import { launchPickerProcess } from "../src/picker-process"
+import { PICKER_SMOKE_STARTUP_TIMEOUT_MS } from "./picker-smoke-fixture"
 
 const sourceManifest = JSON.parse(
   await readFile(new URL("../package.json", import.meta.url), "utf8"),
@@ -130,11 +131,11 @@ try {
         kill: () => child.kill(),
       }
     },
-    timeoutMs: 30_000,
+    timeoutMs: PICKER_SMOKE_STARTUP_TIMEOUT_MS,
     request: {
       batchID: "installed-native-ready-smoke",
       sessionID: "installed-native-ready-smoke",
-      timeoutMs: 30_000,
+      timeoutMs: PICKER_SMOKE_STARTUP_TIMEOUT_MS,
       catalog: [{
         providerID: "openai",
         providerName: "OpenAI",

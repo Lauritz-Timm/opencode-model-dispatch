@@ -3,6 +3,7 @@ import { constants } from "node:fs"
 import { fileURLToPath } from "node:url"
 
 import { launchPickerProcess } from "../src/picker-process"
+import { PICKER_SMOKE_STARTUP_TIMEOUT_MS } from "./picker-smoke-fixture"
 
 const platform =
   process.platform === "win32"
@@ -23,11 +24,11 @@ const binary =
 await access(binary, process.platform === "win32" ? constants.F_OK : constants.X_OK)
 const launched = await launchPickerProcess({
   env: { OPENCODE_MODEL_DISPATCH_PICKER: binary },
-  timeoutMs: 20_000,
+  timeoutMs: PICKER_SMOKE_STARTUP_TIMEOUT_MS,
   request: {
     batchID: "native-ready-smoke",
     sessionID: "native-ready-smoke",
-    timeoutMs: 20_000,
+    timeoutMs: PICKER_SMOKE_STARTUP_TIMEOUT_MS,
     catalog: [{
       providerID: "openai",
       providerName: "OpenAI",

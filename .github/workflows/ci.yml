@@ -115,7 +115,7 @@ jobs:
       - name: Install Linux Tauri prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y util-linux libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev openbox xdotool xvfb
+          sudo apt-get install -y util-linux libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev openbox x11-utils xdotool xvfb
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.3.14
@@ -137,17 +137,21 @@ jobs:
       - name: Exercise ready protocol, native GUI, installed npm package, and real TUI
         shell: bash
         run: |
-          xvfb-run -a --server-args="-screen 0 1280x1024x24" bash -euo pipefail -c '
-            openbox >/tmp/model-dispatch-openbox.log 2>&1 &
-            bun run test:picker-ready
-            bun run scripts/smoke-native-picker-auto.ts
-            bun run test:package:native:opencode
-            bun run test:package:native:tui
-          '
+          xvfb-run -a --server-args="-screen 0 1280x1024x24" \
+            bash scripts/run-with-openbox.sh \
+              bash -euo pipefail -c '
+                bun run test:picker-ready
+                bun run scripts/smoke-native-picker-auto.ts
+                bun run test:package:native:opencode
+                bun run test:package:native:tui
+              '
         env:
           GDK_BACKEND: x11
+          LIBGL_ALWAYS_SOFTWARE: "1"
           MODEL_DISPATCH_TEST_PREBUILT: "1"
           OPENCODE_BIN: ${{ runner.temp }}/opencode-runtime/node_modules/.bin/opencode
+          WEBKIT_DISABLE_COMPOSITING_MODE: "1"
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
 
   picker-build-arm64:
     name: Picker build (Linux ARM64)
@@ -159,7 +163,7 @@ jobs:
       - name: Install Linux Tauri prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y binutils file util-linux libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev openbox xdotool xvfb
+          sudo apt-get install -y binutils file util-linux libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev openbox x11-utils xdotool xvfb
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.3.14
@@ -198,17 +202,21 @@ jobs:
       - name: Exercise ARM64 ready protocol, native GUI, installed npm package, and real TUI
         shell: bash
         run: |
-          xvfb-run -a --server-args="-screen 0 1280x1024x24" bash -euo pipefail -c '
-            openbox >/tmp/model-dispatch-openbox.log 2>&1 &
-            bun run test:picker-ready
-            bun run scripts/smoke-native-picker-auto.ts
-            bun run test:package:native:opencode
-            bun run test:package:native:tui
-          '
+          xvfb-run -a --server-args="-screen 0 1280x1024x24" \
+            bash scripts/run-with-openbox.sh \
+              bash -euo pipefail -c '
+                bun run test:picker-ready
+                bun run scripts/smoke-native-picker-auto.ts
+                bun run test:package:native:opencode
+                bun run test:package:native:tui
+              '
         env:
           GDK_BACKEND: x11
+          LIBGL_ALWAYS_SOFTWARE: "1"
           MODEL_DISPATCH_TEST_PREBUILT: "1"
           OPENCODE_BIN: ${{ runner.temp }}/opencode-runtime/node_modules/.bin/opencode
+          WEBKIT_DISABLE_COMPOSITING_MODE: "1"
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
 
   packaging:
     name: Packaging checks
