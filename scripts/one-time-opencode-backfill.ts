@@ -1,4 +1,12 @@
-import { appendFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises"
+import {
+  access,
+  appendFile,
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises"
 import { join } from "node:path"
 
 interface BackfillResult {
@@ -8,7 +16,7 @@ interface BackfillResult {
   platform: string
   shard_count: number
   shard_index: number
-  stage: "install" | "normal" | "same-agent-fifo" | "passed"
+  stage: "binary" | "install" | "normal" | "same-agent-fifo" | "passed"
   status: "failed" | "passed"
   version: string
 }
@@ -63,12 +71,11 @@ async function main(): Promise<void> {
           shardCount,
         )
       } else {
-        const binary = join(
+        const binary = await resolveInstalledOpenCodeBinary(
           runtime,
-          "node_modules",
-          "opencode-ai",
-          "bin",
-          "opencode.exe",
+          version,
+          platform,
+          arch,
         )
         const environment = {
           ...process.env,
@@ -130,7 +137,7 @@ async function main(): Promise<void> {
         platform,
         shard_count: shardCount,
         shard_index: shardIndex,
-        stage: "install",
+        stage: "binary",
         status: "failed",
         version,
       }
@@ -225,6 +232,75 @@ function outputTail(command: { stderr: string; stdout: string }): string {
 
 function npmExecutable(): string {
   return Bun.which("npm") ?? (process.platform === "win32" ? "npm.cmd" : "npm")
+}
+
+async function resolveInstalledOpenCodeBinary(
+  runtime: string,
+  version: string,
+  platform: string,
+  arch: string,
+): Promise<string> {
+  const packagePlatform = platform === "macos" ? "darwin" : platform
+  const binaryName = platform === "windows" ? "opencode.exe" : "opencode"
+  const packageNames = [
+    `opencode-${packagePlatform}-${arch}`,
+    `opencode-${packagePlatform}-${arch}-baseline`,
+    `opencode-${packagePlatform}-${arch}-musl`,
+    `opencode-${packagePlatform}-${arch}-baseline-musl`,
+  ]
+  const nodeModules = join(runtime, "node_modules")
+  const candidates = [
+    ...packageNames.map((name) =>
+      join(nodeModules, name, "bin", binaryName)
+    ),
+    join(nodeModules, "opencode-ai", "bin", "opencode.exe"),
+    join(nodeModules, "opencode-ai", "bin", "opencode"),
+    join(nodeModules, "opencode-ai", "bin", "opencode.cmd"),
+  ]
+  const diagnostics: string[] = []
+
+  for (const candidate of candidates) {
+    try {
+      await access(candidate)
+    } catch {
+      continue
+    }
+
+    try {
+      const probe = run([candidate, "--version"], {
+        ...process.env,
+        HOME: runtime,
+        OPENCODE_DISABLE_AUTOUPDATE: "true",
+        USERPROFILE: runtime,
+        XDG_CACHE_HOME: join(runtime, "cache"),
+      })
+      const output = outputTail(probe)
+      if (
+        probe.exitCode === 0 &&
+        new RegExp(`(^|\\s)${escapeRegExp(version)}($|\\s)`).test(output)
+      ) {
+        return candidate
+      }
+      diagnostics.push(
+        `${candidate}: exit ${probe.exitCode}; ${output || "no version output"}`,
+      )
+    } catch (error) {
+      diagnostics.push(`${candidate}: ${String(error)}`)
+    }
+  }
+
+  throw new Error(
+    [
+      `No OpenCode ${version} binary for ${platform}-${arch} passed --version.`,
+      diagnostics.length
+        ? diagnostics.join("\n")
+        : `No candidate existed. Checked:\n${candidates.join("\n")}`,
+    ].join("\n"),
+  )
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
 
 function requiredEnvironment(name: string): string {
