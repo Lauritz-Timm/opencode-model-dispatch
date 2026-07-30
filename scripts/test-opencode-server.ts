@@ -10,6 +10,7 @@ import {
   startLocalNpmRegistry,
   type LocalNpmRegistry,
 } from "./local-npm-registry"
+import { PICKER_SMOKE_STARTUP_TIMEOUT_MS } from "./picker-smoke-fixture"
 
 const OPENCODE_VERSION = "1.18.7"
 const PROVIDER_ID = "dispatch-test"
@@ -26,7 +27,7 @@ const PARENT_PROMPT =
 const CONCURRENT_PARENT_PROMPT =
   "Use the task tool exactly twice in parallel with subagent_type general. Return both results."
 const OPENCODE_STARTUP_TIMEOUT_MS = 180_000
-const PICKER_STARTUP_TIMEOUT_MS = 30_000
+const FAKE_PICKER_STARTUP_TIMEOUT_MS = 30_000
 const PARENT_PROMPT_TIMEOUT_MS = 120_000
 const TUI_READY_TIMEOUT_MS = 30_000
 
@@ -112,7 +113,9 @@ try {
       dispatch: {
         enabled: true,
         batch_ms: testConcurrentSameAgentFifo ? 25 : 1,
-        picker_timeout_ms: PICKER_STARTUP_TIMEOUT_MS,
+        picker_timeout_ms: useBundledNativePicker
+          ? PICKER_SMOKE_STARTUP_TIMEOUT_MS
+          : FAKE_PICKER_STARTUP_TIMEOUT_MS,
         technical_failure: "default_model",
       },
     }, null, 2)}\n`,

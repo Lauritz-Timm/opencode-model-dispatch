@@ -52,7 +52,10 @@ describe("picker preview fixtures", () => {
     expect(app).toContain("previewFixture")
     expect(app).toContain('import("./preview-fixture.json")')
     expect(app).toContain("createTauriPickerRuntimeAdapter")
-    expect(app).toContain("if (isDevPreview) return")
+    expect(app).toMatch(
+      /if \(isDevPreview\) \{\s+if \(hasTauriRuntime\(\)\) await revealPickerWindow\(\)\s+return\s+\}/,
+    )
+    expect(app).toContain('"__TAURI_INTERNALS__" in window')
     expect(app).not.toContain('import previewFixture from "./preview-fixture.json"')
     expect(app).toContain("taskCount")
     expect(app).toContain("Apply to all")
@@ -140,13 +143,14 @@ describe("picker preview fixtures", () => {
   })
 
   test("native Tauri picker opens centered", async () => {
-    const config = await readJson<{ app: { windows: Array<{ width?: number; height?: number; center?: boolean; decorations?: boolean; theme?: string }> } }>("picker/src-tauri/tauri.conf.json")
+    const config = await readJson<{ app: { windows: Array<{ width?: number; height?: number; center?: boolean; decorations?: boolean; visible?: boolean; theme?: string }> } }>("picker/src-tauri/tauri.conf.json")
     const main = await readText("picker/src-tauri/src/main.rs")
 
     expect(config.app.windows[0]?.width).toBe(680)
     expect(config.app.windows[0]?.height).toBe(500)
     expect(config.app.windows[0]?.center).toBe(true)
     expect(config.app.windows[0]?.decorations).toBe(false)
+    expect(config.app.windows[0]?.visible).toBe(false)
     expect(config.app.windows[0]?.theme).toBe("Dark")
     expect(main).toContain("window.center()")
   })
@@ -165,6 +169,7 @@ describe("picker preview fixtures", () => {
     expect(capability.windows).toContain("preview-*")
     expect(capability.permissions).toContain("core:webview:allow-create-webview-window")
     expect(capability.permissions).toContain("core:webview:allow-get-all-webviews")
+    expect(capability.permissions).toContain("core:window:allow-show")
     expect(capability.permissions).toContain("core:window:allow-set-focus")
     expect(capability.permissions).toContain("core:window:allow-close")
     expect(capability.permissions).toContain("core:window:allow-start-dragging")

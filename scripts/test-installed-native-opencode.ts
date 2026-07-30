@@ -24,7 +24,7 @@ const installRoot = join(work, "consumer")
 const npmCache = join(work, "npm-cache")
 const assetName = `picker-linux-${process.arch}`
 const xdotool = process.env.XDOTOOL_BIN ?? "xdotool"
-const guiSettleMs = Number(process.env.MODEL_DISPATCH_TEST_GUI_SETTLE_MS ?? "1500")
+const guiSettleMs = Number(process.env.MODEL_DISPATCH_TEST_GUI_SETTLE_MS ?? "5000")
 const providedTarball =
   process.env.MODEL_DISPATCH_TEST_PACKAGE_TARBALL?.trim() || undefined
 const useTui = process.env.MODEL_DISPATCH_TEST_TUI === "1"
@@ -146,9 +146,10 @@ try {
   ).text()
 
   const windowID = await findPickerWindow(xdotool, integration)
-  // The native adapter reports ready before WebKit has necessarily painted the
-  // final layout. Wait briefly before driving its real keyboard controls.
-  await Bun.sleep(Number.isFinite(guiSettleMs) && guiSettleMs >= 0 ? guiSettleMs : 1_500)
+  // The native window remains hidden until its request is hydrated. Allow the
+  // now-visible WebKit layout and native controls to finish painting before
+  // driving pixel-level input.
+  await Bun.sleep(Number.isFinite(guiSettleMs) && guiSettleMs >= 0 ? guiSettleMs : 5_000)
   await run([xdotool, "windowfocus", "--sync", windowID], process.env)
 
   // An inert click establishes WebKit's sequential focus at the picker panel.

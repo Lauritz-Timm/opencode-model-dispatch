@@ -169,7 +169,10 @@ describe("picker Svelte and OpenCode token contract", () => {
     const runtime = await readText("picker/src/runtime-rpc.ts")
 
     expect(app).toMatch(
-      /runtimeAdapter\.start\(async \(request\) => \{\s+runtimeRequest = request\s+await tick\(\)/,
+      /runtimeAdapter\.start\(async \(request\) => \{\s+runtimeRequest = request\s+await tick\(\)\s+await revealPickerWindow\(\)/,
+    )
+    expect(app).toMatch(
+      /async function revealPickerWindow\(\) \{\s+const pickerWindow = getCurrentWindow\(\)\s+await pickerWindow\.show\(\)\s+void pickerWindow\.setFocus\(\)\.catch\(\(\) => undefined\)/,
     )
     expect(runtime).toContain('method: "started"')
     expect(runtime.indexOf("Promise.resolve(onStart(request))")).toBeLessThan(

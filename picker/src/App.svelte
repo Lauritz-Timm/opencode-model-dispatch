@@ -100,12 +100,16 @@
         previewFixture = (await import("./preview-fixture.json")).default
         return
       }
-      if (isDevPreview) return
+      if (isDevPreview) {
+        if (hasTauriRuntime()) await revealPickerWindow()
+        return
+      }
 
       runtimeAdapter = await createTauriPickerRuntimeAdapter()
       const unlistenRuntime = await runtimeAdapter.start(async (request) => {
         runtimeRequest = request
         await tick()
+        await revealPickerWindow()
       })
       const unlistenClose = await getCurrentWindow().onCloseRequested(async (event) => {
         if (allowWindowClose) return
@@ -334,6 +338,16 @@
   function startWindowDrag() {
     if (typeof window === "undefined") return
     void getCurrentWindow().startDragging()
+  }
+
+  function hasTauriRuntime() {
+    return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
+  }
+
+  async function revealPickerWindow() {
+    const pickerWindow = getCurrentWindow()
+    await pickerWindow.show()
+    void pickerWindow.setFocus().catch(() => undefined)
   }
 
   function setAllModels(value: string) {
