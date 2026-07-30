@@ -343,6 +343,7 @@ describe("packaging and release assets", () => {
       workflow.indexOf("\n  picker-build-nonlinux:"),
       workflow.indexOf("\n  packaging:"),
     )
+    const packagingJob = workflow.slice(workflow.indexOf("\n  packaging:"))
 
     expect(workflow).toContain("bun test")
     expect(workflow).toContain("bun run typecheck")
@@ -426,6 +427,13 @@ describe("packaging and release assets", () => {
     expect(hostCheck).toContain(
       'releasePickerAssetFailures(assetRoot, [asset], "dist-picker")',
     )
+    expect(packagingJob).toContain(
+      'devDependencies["@opencode-ai/plugin"]',
+    )
+    expect(packagingJob).toContain(
+      '"@opencode-ai/plugin@$peer_version" "./$pkg"',
+    )
+    expect(packagingJob).toContain("--package-lock=false")
     expect(workflow).not.toContain("- run: bun install\n        working-directory: picker")
     expect(headlessWrapper).toContain("openbox --sm-disable")
     expect(headlessWrapper).toContain("_NET_SUPPORTING_WM_CHECK")

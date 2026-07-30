@@ -295,4 +295,6 @@ jobs:
           set -euo pipefail
           pkg="$(npm pack --silent)"
           tmp="$(mktemp -d)"
-          npm install --ignore-scripts --prefix "$tmp" "./$pkg"
+          peer_version="$(node -p 'require("./package.json").devDependencies["@opencode-ai/plugin"]')"
+          npm install --ignore-scripts --no-audit --no-fund --package-lock=false \
+            --prefix "$tmp" "@opencode-ai/plugin@$peer_version" "./$pkg"
