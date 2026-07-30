@@ -97,6 +97,10 @@ describe("packaging and release assets", () => {
       ">=1.18.7 <2",
     )
     expect(pkg.peerDependenciesMeta?.["@opencode-ai/plugin"]).toBeUndefined()
+    expect(pkg.devDependencies?.["@opencode-ai/plugin"]).toBe("1.18.7")
+    expect(pkg.devDependencies?.["@opencode-ai/sdk"]).toBe("1.18.7")
+    expect(pkg.scripts?.["check:package-types"]).toContain("--ignoreConfig")
+    expect(pkg.scripts?.["check:package-types"]).toContain("--types bun-types")
     expect(await Bun.file(new URL("../.npmignore", import.meta.url)).exists()).toBe(true)
     expect(launcher).toContain("isAbsolute")
     expect(launcher).toContain(
@@ -134,6 +138,10 @@ describe("packaging and release assets", () => {
     expect(script).toContain("postinstall")
     expect(script).toContain("opencode-model-dispatch-picker")
     expect(script).toContain("files")
+    expect(script).toContain("minimumOpenCodeContractVersion")
+    expect(script).toContain("check:package-types")
+    expect(script).toContain("--ignoreConfig")
+    expect(script).toContain("--types bun-types")
   })
 
   test("release packaging validates native binary magic, size, and Unix modes", async () => {

@@ -17,6 +17,7 @@ type PackageJson = {
   engines?: Record<string, string>
   dependencies?: Record<string, string>
   optionalDependencies?: Record<string, string>
+  devDependencies?: Record<string, string>
   peerDependencies?: Record<string, string>
   peerDependenciesMeta?: Record<string, { optional?: boolean }>
   homepage?: string
@@ -406,6 +407,10 @@ async function main(): Promise<void> {
   const failures: string[] = []
   const pkg = await readJson<PackageJson>("package.json")
   const readme = await readText("README.md")
+  const minimumOpenCodeContractVersion =
+    /^>=([0-9]+\.[0-9]+\.[0-9]+) <[0-9]+$/.exec(
+      pkg.engines?.opencode ?? "",
+    )?.[1]
   const requireAllPickers =
     process.argv.includes("--require-all-pickers") ||
     process.env.REQUIRE_ALL_PICKERS === "1"
@@ -433,6 +438,29 @@ async function main(): Promise<void> {
   if (pkg.peerDependenciesMeta?.["@opencode-ai/plugin"] !== undefined) {
     failures.push(
       "@opencode-ai/plugin must not be an optional peer because public declarations import it",
+    )
+  }
+  if (!minimumOpenCodeContractVersion) {
+    failures.push(
+      "package engines.opencode must expose an exact stable lower-bound version",
+    )
+  } else {
+    for (const dependency of ["@opencode-ai/plugin", "@opencode-ai/sdk"]) {
+      if (pkg.devDependencies?.[dependency] !== minimumOpenCodeContractVersion) {
+        failures.push(
+          `${dependency} development dependency must remain pinned to the minimum OpenCode contract ${minimumOpenCodeContractVersion}`,
+        )
+      }
+    }
+  }
+  if (!pkg.scripts?.["check:package-types"]?.includes("--ignoreConfig")) {
+    failures.push(
+      "check:package-types must ignore the repository tsconfig when checking the emitted declaration entrypoint",
+    )
+  }
+  if (!pkg.scripts?.["check:package-types"]?.includes("--types bun-types")) {
+    failures.push(
+      "check:package-types must explicitly load the pinned Bun and Node declaration environment",
     )
   }
   if (pkg.publishConfig?.access !== "public" || pkg.publishConfig.provenance !== true) {
