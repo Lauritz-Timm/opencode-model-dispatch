@@ -1,9 +1,7 @@
-name: Stop one-time OpenCode backfill
+name: One-time OpenCode 1.x backfill
 
 on:
-  push:
-    branches:
-      - "codex/opencode-1x-backfill-20260730"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,8 +11,100 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  stop:
-    name: Backfill postponed until first release
-    runs-on: ubuntu-22.04
+  backfill:
+    name: ${{ matrix.target.platform }}-${{ matrix.target.arch }} shard ${{ matrix.shard }}
+    runs-on: ${{ matrix.target.runner }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        target:
+          - platform: linux
+            arch: x64
+            runner: ubuntu-22.04
+          - platform: linux
+            arch: arm64
+            runner: ubuntu-22.04-arm
+          - platform: macos
+            arch: arm64
+            runner: macos-15
+          - platform: windows
+            arch: x64
+            runner: windows-2025
+          - platform: windows
+            arch: arm64
+            runner: windows-11-arm
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
     steps:
-      - run: echo "The compatibility backfill is postponed until the first plugin release."
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: Exercise assigned OpenCode versions
+        shell: bash
+        run: bun scripts/one-time-opencode-backfill.ts
+        env:
+          BACKFILL_ARCH: ${{ matrix.target.arch }}
+          BACKFILL_PLATFORM: ${{ matrix.target.platform }}
+          BACKFILL_RESULT_PATH: ${{ runner.temp }}/backfill/results.ndjson
+          BACKFILL_SHARD_COUNT: "20"
+          BACKFILL_SHARD_INDEX: ${{ matrix.shard }}
+      - name: Retain shard results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: backfill-${{ matrix.target.platform }}-${{ matrix.target.arch }}-${{ matrix.shard }}
+          path: ${{ runner.temp }}/backfill/results.ndjson
+          if-no-files-found: error
+          retention-days: 7
+
+  summarize:
+    name: Summarize all exact compatibility results
+    if: always()
+    needs: backfill
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: backfill-*
+          path: ${{ runner.temp }}/backfill-results
+      - name: Build complete JSON, CSV, and Markdown reports
+        id: summary
+        run: bun scripts/one-time-opencode-backfill.ts --summarize "${{ runner.temp }}/backfill-results"
+      - name: Publish summary
+        run: cat opencode-backfill-summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain complete backfill report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: opencode-1x-backfill-report
+          path: |
+            opencode-backfill-results.json
+            opencode-backfill-results.csv
+            opencode-backfill-summary.md
+          if-no-files-found: error
+          retention-days: 30
+      - name: Fail when any combination failed or is missing
+        if: steps.summary.outputs.failures != '0' || steps.summary.outputs.missing != '0'
+        run: |
+          echo "Backfill contains ${{ steps.summary.outputs.failures }} failure(s) and ${{ steps.summary.outputs.missing }} missing result(s)." >&2
+          exit 1
