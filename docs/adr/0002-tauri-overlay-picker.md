@@ -16,7 +16,7 @@ Bundle a Tauri mini-window picker with the plugin.
 
 The picker will be a focused always-on-top external overlay, packaged as
 prebuilt binaries per platform. It will use OpenCode-like dark/light styling,
-best-effort theme loading, plugin branding, keyboard navigation, apply-to-all,
+best-effort theme loading, compact window chrome, keyboard navigation, apply-to-all,
 and per-task model selection.
 
 ## Consequences

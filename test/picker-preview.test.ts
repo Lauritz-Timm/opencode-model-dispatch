@@ -20,19 +20,35 @@ describe("picker preview fixtures", () => {
 
   test("picker build uses Vite without the obsolete static build script", async () => {
     const pkg = await readJson<{ scripts?: Record<string, string> }>("picker/package.json")
+    const html = await readText("picker/index.html")
+    const app = await readText("picker/src/App.svelte")
 
     expect(pkg.scripts?.build).toBe("tsc -p tsconfig.json --noEmit && vite build")
     expect(await Bun.file(new URL("picker/scripts/build-static.ts", root)).exists()).toBe(false)
+    expect(html).not.toContain('rel="icon"')
+    expect(html).not.toContain('rel="apple-touch-icon"')
+    expect(html).not.toContain('rel="manifest"')
+    expect(app).not.toContain("app-icon")
   })
 
   test("preview fixture includes realistic model-selection and setup data", async () => {
     const fixture = await readJson<{
-      modelSelection: { tasks: unknown[]; models: unknown[] }
+      modelSelection: {
+        tasks: unknown[]
+        models: Array<{ modelID?: unknown; variants?: unknown }>
+        applyToAllModels: Array<{ modelID?: unknown; variants?: unknown }>
+      }
       setup: { settings: unknown; scope: string }
     }>("picker/src/preview-fixture.json")
 
     expect(fixture.modelSelection.tasks).toHaveLength(3)
     expect(fixture.modelSelection.models.length).toBeGreaterThanOrEqual(4)
+    expect(fixture.modelSelection.models.every((model) => Array.isArray(model.variants))).toBe(true)
+    expect(fixture.modelSelection.models.some((model) => (model.variants as unknown[]).includes("deep-reasoning"))).toBe(true)
+    expect(fixture.modelSelection.applyToAllModels.map((model) => model.modelID)).toEqual([
+      "claude-3-5-sonnet",
+      "gpt-4o",
+    ])
     expect(fixture.setup.scope).toBe("project")
   })
 
@@ -42,7 +58,10 @@ describe("picker preview fixtures", () => {
     expect(app).toContain("previewFixture")
     expect(app).toContain('import("./preview-fixture.json")')
     expect(app).toContain("createTauriPickerRuntimeAdapter")
-    expect(app).toContain("if (isDevPreview) return")
+    expect(app).toMatch(
+      /if \(isDevPreview\) \{\s+if \(hasTauriRuntime\(\)\) await revealPickerWindow\(\)\s+return\s+\}/,
+    )
+    expect(app).toContain('"__TAURI_INTERNALS__" in window')
     expect(app).not.toContain('import previewFixture from "./preview-fixture.json"')
     expect(app).toContain("taskCount")
     expect(app).toContain("Apply to all")
@@ -56,6 +75,7 @@ describe("picker preview fixtures", () => {
     const dts = await readText("picker/src/svelte.d.ts")
     const toggleRow = await readText("picker/src/ToggleRow.svelte")
     const numberRow = await readText("picker/src/NumberRow.svelte")
+    const effortSelect = await readText("picker/src/EffortSelect.svelte")
 
     expect(app).toContain("isDevPreview")
     expect(app).toContain("import.meta.env.DEV")
@@ -84,6 +104,7 @@ describe("picker preview fixtures", () => {
     expect(app).toContain("Open settings")
     expect(app).toContain("<ToggleRow")
     expect(app).toContain("<NumberRow")
+    expect(app).toContain("<EffortSelect")
     expect(toggleRow).toContain('data-slot="switch-input"')
     expect(toggleRow).toContain('data-slot="switch-control"')
     expect(toggleRow).toContain('data-slot="switch-thumb"')
@@ -95,6 +116,8 @@ describe("picker preview fixtures", () => {
     expect(toggleRow).toContain('data-slot="settings-v2-row-control"')
     expect(numberRow).toContain('data-component="settings-v2-row"')
     expect(numberRow).toContain('data-slot="settings-v2-row-copy"')
+    expect(effortSelect).toContain('<option value="">Auto</option>')
+    expect(effortSelect).toContain("disabled={options.length === 0}")
     expect(app).toContain("--v2-background-bg-base")
     expect(app).toContain("--v2-border-border-muted")
     expect(dts).toContain("ImportMetaEnv")
@@ -126,13 +149,14 @@ describe("picker preview fixtures", () => {
   })
 
   test("native Tauri picker opens centered", async () => {
-    const config = await readJson<{ app: { windows: Array<{ width?: number; height?: number; center?: boolean; decorations?: boolean; theme?: string }> } }>("picker/src-tauri/tauri.conf.json")
+    const config = await readJson<{ app: { windows: Array<{ width?: number; height?: number; center?: boolean; decorations?: boolean; visible?: boolean; theme?: string }> } }>("picker/src-tauri/tauri.conf.json")
     const main = await readText("picker/src-tauri/src/main.rs")
 
     expect(config.app.windows[0]?.width).toBe(680)
     expect(config.app.windows[0]?.height).toBe(500)
     expect(config.app.windows[0]?.center).toBe(true)
     expect(config.app.windows[0]?.decorations).toBe(false)
+    expect(config.app.windows[0]?.visible).toBe(false)
     expect(config.app.windows[0]?.theme).toBe("Dark")
     expect(main).toContain("window.center()")
   })
@@ -151,6 +175,7 @@ describe("picker preview fixtures", () => {
     expect(capability.windows).toContain("preview-*")
     expect(capability.permissions).toContain("core:webview:allow-create-webview-window")
     expect(capability.permissions).toContain("core:webview:allow-get-all-webviews")
+    expect(capability.permissions).toContain("core:window:allow-show")
     expect(capability.permissions).toContain("core:window:allow-set-focus")
     expect(capability.permissions).toContain("core:window:allow-close")
     expect(capability.permissions).toContain("core:window:allow-start-dragging")

@@ -13,7 +13,7 @@
       {
         "id": "task-build",
         "agentType": "builder",
-        "description": "Patch the picker process and shadow-agent config with minimal changes."
+        "description": "Patch the picker process and model-dispatch hooks with minimal changes."
       },
       {
         "id": "task-review",
@@ -26,30 +26,51 @@
         "providerID": "anthropic",
         "providerName": "Anthropic",
         "modelID": "claude-3-5-sonnet",
-        "displayName": "Claude 3.5 Sonnet"
+        "displayName": "Claude 3.5 Sonnet",
+        "variants": ["fast", "balanced", "deep-reasoning"]
       },
       {
         "providerID": "anthropic",
         "providerName": "Anthropic",
         "modelID": "claude-3-opus",
-        "displayName": "Claude 3 Opus"
+        "displayName": "Claude 3 Opus",
+        "variants": ["deep-reasoning"]
       },
       {
         "providerID": "openai",
         "providerName": "OpenAI",
         "modelID": "gpt-4o",
-        "displayName": "GPT-4o"
+        "displayName": "GPT-4o",
+        "variants": ["minimal", "standard", "xhigh"]
       },
       {
         "providerID": "google",
         "providerName": "Google",
         "modelID": "gemini-1.5-pro",
-        "displayName": "Gemini 1.5 Pro"
+        "displayName": "Gemini 1.5 Pro",
+        "variants": []
+      }
+    ],
+    "applyToAllModels": [
+      {
+        "providerID": "anthropic",
+        "providerName": "Anthropic",
+        "modelID": "claude-3-5-sonnet",
+        "displayName": "Claude 3.5 Sonnet",
+        "variants": ["fast", "balanced", "deep-reasoning"]
+      },
+      {
+        "providerID": "openai",
+        "providerName": "OpenAI",
+        "modelID": "gpt-4o",
+        "displayName": "GPT-4o",
+        "variants": ["minimal", "standard", "xhigh"]
       }
     ]
   },
   "setup": {
     "scope": "project",
+    "projectIsGitRepo": true,
     "settings": {
       "privacy": {
         "loggingEnabled": false

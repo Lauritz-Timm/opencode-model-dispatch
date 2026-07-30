@@ -15,7 +15,7 @@
 
   function handleInput(raw: string) {
     inputValue = raw
-    if (isValidNumberInput(raw)) onChange(Number(raw))
+    onChange(isValidNumberInput(raw) ? Number(raw) : Number.NaN)
   }
 </script>
 

@@ -1,6 +1,6 @@
 # 0003 Privacy-Safe Logging
 
-Parent: `docs/plan.md`
+Parent: [`PRODUCT.md`](../../PRODUCT.md)
 
 What to build: Implement structured plugin logging that records useful operational telemetry while excluding prompts, descriptions, user text, and other sensitive task details, with complete suppression when privacy logging is disabled.
 

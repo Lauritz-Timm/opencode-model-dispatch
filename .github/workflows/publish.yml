@@ -5,60 +5,1491 @@ on:
     tags:
       - "v*"
 
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
-  contents: write
-  id-token: write
+  actions: read
+  contents: read
 
 jobs:
-  npm:
-    name: Publish npm package
-    runs-on: ubuntu-latest
+  validate:
+    name: Validate release source
+    runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
-          registry-url: https://registry.npmjs.org
-      - run: bun install --frozen-lockfile
-      - run: bun run build
-      - run: bun run check:packaging
-      - run: npm publish --provenance --access public
+      - name: Verify exact release SHA passed push CI
+        run: bun run check:release-ci
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.97.1 --profile minimal --no-self-update
+      - name: Verify clean tracked source, changelog, main equality, and tag
+        run: bun run check:release-source
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+      - run: bun install --frozen-lockfile
+      - run: bun audit
+      - run: bun audit --cwd picker
+      - name: Verify generated third-party notices
+        run: |
+          cargo install cargo-about --version 0.9.1 --locked --features cli
+          cargo fetch --locked --manifest-path picker/src-tauri/Cargo.toml
+          bun run check:notices
+      - name: Verify synchronized versions and release tag
+        run: bun run check:release-version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+      - name: Prepare deterministic release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in LICENSE THIRD_PARTY_NOTICES.md; do
+            test -f "$path"
+            test ! -L "$path"
+          done
+          legal_assets="$RUNNER_TEMP/release-legal-assets"
+          release_notes="$RUNNER_TEMP/release-notes"
+          mkdir -p "$legal_assets" "$release_notes"
+          cp LICENSE THIRD_PARTY_NOTICES.md "$legal_assets/"
+          bun scripts/extract-release-notes.ts \
+            --output "$release_notes/release-notes.md"
+      - name: Retain deterministic legal assets
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-legal-assets
+          path: ${{ runner.temp }}/release-legal-assets/*
+          if-no-files-found: error
+          overwrite: true
+      - name: Retain deterministic release notes
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-notes
+          path: ${{ runner.temp }}/release-notes/release-notes.md
+          if-no-files-found: error
+          overwrite: true
+      - run: bun run typecheck
+      - run: bun run check:coverage
+      - run: bun run check:packaging
+      - run: bun run test:package
+      - name: Install tested OpenCode runtime
+        run: npm install --prefix "$RUNNER_TEMP/opencode-runtime" --package-lock=false opencode-ai@1.18.7
+      - run: bun run test:opencode
+        env:
+          OPENCODE_BIN: ${{ runner.temp }}/opencode-runtime/node_modules/.bin/opencode
 
-  picker-assets:
-    name: Picker asset ${{ matrix.platform }}-${{ matrix.arch }}
+  # Repository policy is a local pre-tag gate; tagged jobs never receive an
+  # administration PAT.
+  picker-unsigned:
+    name: Unsigned picker ${{ matrix.platform }}-${{ matrix.arch }}
+    needs: [validate, manual-integration]
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: linux
             arch: x64
-            ext: ""
-            runner: ubuntu-latest
+            runner: ubuntu-22.04
+          - platform: linux
+            arch: arm64
+            runner: ubuntu-22.04-arm
           - platform: macos
             arch: arm64
-            ext: ""
-            runner: macos-latest
+            runner: macos-15
           - platform: windows
             arch: x64
-            ext: ".exe"
-            runner: windows-latest
+            runner: windows-2025
+          - platform: windows
+            arch: arm64
+            runner: windows-11-arm
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install Linux Tauri prerequisites
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev openbox x11-utils xdotool xvfb
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.97.1 --profile minimal --no-self-update
       - run: bun install --frozen-lockfile
-      - run: bun install
+      - run: bun install --frozen-lockfile
         working-directory: picker
       - run: bun run build:picker
-      - name: Upload picker release asset
+      - run: cargo test --manifest-path picker/src-tauri/Cargo.toml --locked
+      - name: Verify Linux runtime linkage
+        if: runner.os == 'Linux'
+        run: |
+          ldd dist-picker/picker-linux-${{ matrix.arch }} | tee /tmp/picker-ldd.txt
+          ! grep -q "not found" /tmp/picker-ldd.txt
+      - name: Smoke native picker ready protocol (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a --server-args="-screen 0 1280x1024x24" bun run test:picker-ready
+        env:
+          GDK_BACKEND: x11
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          WEBKIT_DISABLE_COMPOSITING_MODE: "1"
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+      - name: Exercise native picker GUI submit (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          xvfb-run -a --server-args="-screen 0 1280x1024x24" \
+            bash scripts/run-with-openbox.sh \
+              bun run scripts/smoke-native-picker-auto.ts
+        env:
+          GDK_BACKEND: x11
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          WEBKIT_DISABLE_COMPOSITING_MODE: "1"
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+      - name: Smoke native picker ready protocol
+        if: runner.os != 'Linux'
+        run: bun run test:picker-ready
+      - name: Retain tested Linux picker
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: picker-linux-${{ matrix.arch }}
+          path: dist-picker/picker-linux-${{ matrix.arch }}
+          if-no-files-found: error
+          overwrite: true
+      - name: Retain unsigned macOS picker
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: picker-unsigned-macos-arm64
+          path: dist-picker/picker-macos-arm64
+          if-no-files-found: error
+          overwrite: true
+      - name: Retain unsigned Windows picker
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: picker-unsigned-windows-${{ matrix.arch }}
+          path: dist-picker/picker-windows-${{ matrix.arch }}.exe
+          if-no-files-found: error
+          overwrite: true
+
+  picker-linux-integration:
+    name: Installed OpenCode integration linux-${{ matrix.arch }}
+    needs: picker-unsigned
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-22.04
+            expected_uname: x86_64
+            expected_machine: "Advanced Micro Devices X86-64"
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+            expected_uname: aarch64
+            expected_machine: "AArch64"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install Linux runtime prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev openbox x11-utils xdotool xvfb
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - run: bun install --frozen-lockfile
+      - name: Download exact first-party picker artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: picker-linux-${{ matrix.arch }}
+          path: dist-picker
+      - name: Verify downloaded picker architecture
         shell: bash
         run: |
           set -euo pipefail
-          asset="picker-${{ matrix.platform }}-${{ matrix.arch }}${{ matrix.ext }}"
-          test -f "dist-picker/$asset"
-          gh release upload "${GITHUB_REF_NAME}" "dist-picker/$asset" --clobber
+          asset="dist-picker/picker-linux-${{ matrix.arch }}"
+          test "$(uname -m)" = "${{ matrix.expected_uname }}"
+          test -f "$asset"
+          chmod 0755 "$asset"
+          file "$asset"
+          readelf -h "$asset" | tee /tmp/picker-elf-header.txt
+          grep -Eq "Machine:[[:space:]]+${{ matrix.expected_machine }}" /tmp/picker-elf-header.txt
+      - name: Build plugin for installed-package test
+        run: bun run build
+      - name: Install tested OpenCode runtime after artifact isolation
+        run: npm install --prefix "$RUNNER_TEMP/opencode-runtime" --package-lock=false opencode-ai@1.18.7
+      - name: Exercise downloaded npm package through OpenCode and native GUI
+        shell: bash
+        run: |
+          xvfb-run -a --server-args="-screen 0 1280x1024x24" \
+            bash scripts/run-with-openbox.sh \
+              bun run test:package:native:opencode
+        env:
+          GDK_BACKEND: x11
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          MODEL_DISPATCH_TEST_PREBUILT: "1"
+          OPENCODE_BIN: ${{ runner.temp }}/opencode-runtime/node_modules/.bin/opencode
+          WEBKIT_DISABLE_COMPOSITING_MODE: "1"
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+      - name: Exercise downloaded npm package through OpenCode TUI
+        shell: bash
+        run: |
+          xvfb-run -a --server-args="-screen 0 1280x1024x24" \
+            bash scripts/run-with-openbox.sh \
+              bun run test:package:native:tui
+        env:
+          GDK_BACKEND: x11
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          MODEL_DISPATCH_TEST_PREBUILT: "1"
+          OPENCODE_BIN: ${{ runner.temp }}/opencode-runtime/node_modules/.bin/opencode
+          WEBKIT_DISABLE_COMPOSITING_MODE: "1"
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+
+  picker-sign-macos:
+    name: Sign and notarize macOS picker
+    needs: picker-unsigned
+    runs-on: macos-15
+    permissions:
+      actions: read
+    steps:
+      - name: Download exact unsigned macOS picker
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: picker-unsigned-macos-arm64
+          path: ${{ runner.temp }}/unsigned-picker
+      - name: Sign, notarize, and verify Apple Silicon picker
+        shell: /bin/bash --noprofile --norc -e -o pipefail {0}
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: |
+          for name in \
+            APPLE_CERTIFICATE \
+            APPLE_CERTIFICATE_PASSWORD \
+            APPLE_KEYCHAIN_PASSWORD \
+            APPLE_SIGNING_IDENTITY \
+            APPLE_API_KEY_ID \
+            APPLE_API_ISSUER_ID \
+            APPLE_API_PRIVATE_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "Missing required Apple release secret: $name" >&2
+              exit 1
+            fi
+          done
+
+          unsigned_root="$RUNNER_TEMP/unsigned-picker"
+          picker="$unsigned_root/picker-macos-arm64"
+          entry_count="$(/usr/bin/find "$unsigned_root" -print | /usr/bin/wc -l | /usr/bin/tr -d '[:space:]')"
+          if [ "$entry_count" -ne 2 ] || [ ! -f "$picker" ] || [ -L "$picker" ]; then
+            echo "Expected exactly one regular unsigned macOS picker artifact" >&2
+            exit 1
+          fi
+          /usr/bin/file "$picker" | /usr/bin/grep -F "Mach-O 64-bit executable arm64"
+          /bin/chmod 755 "$picker"
+
+          certificate="$RUNNER_TEMP/developer-id.p12"
+          keychain="$RUNNER_TEMP/model-dispatch.keychain-db"
+          api_key="$RUNNER_TEMP/notary-api-key.p8"
+          archive="$RUNNER_TEMP/picker-macos-arm64.zip"
+          notary_result="$RUNNER_TEMP/notary-result.json"
+          umask 077
+          printf '%s' "$APPLE_CERTIFICATE" | /usr/bin/base64 -D > "$certificate"
+          printf '%s' "$APPLE_API_PRIVATE_KEY" | /usr/bin/base64 -D > "$api_key"
+          /usr/bin/security create-keychain -p "$APPLE_KEYCHAIN_PASSWORD" "$keychain"
+          /usr/bin/security set-keychain-settings -lut 21600 "$keychain"
+          /usr/bin/security unlock-keychain -p "$APPLE_KEYCHAIN_PASSWORD" "$keychain"
+          /usr/bin/security import "$certificate" \
+            -k "$keychain" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -t agg \
+            -f pkcs12
+          /usr/bin/security set-key-partition-list -S apple-tool:,apple: -s \
+            -k "$APPLE_KEYCHAIN_PASSWORD" "$keychain"
+          identities="$(/usr/bin/security find-identity -v -p codesigning "$keychain")"
+          printf '%s\n' "$identities" | /usr/bin/grep -F -- "$APPLE_SIGNING_IDENTITY"
+
+          /usr/bin/codesign --force --options runtime --timestamp \
+            --keychain "$keychain" \
+            --sign "$APPLE_SIGNING_IDENTITY" \
+            "$picker"
+          /usr/bin/codesign --verify --strict --verbose=2 "$picker"
+          /usr/bin/codesign --display --verbose=4 "$picker"
+          /usr/bin/ditto -c -k --keepParent "$picker" "$archive"
+          /usr/bin/xcrun notarytool submit "$archive" \
+            --key "$api_key" \
+            --key-id "$APPLE_API_KEY_ID" \
+            --issuer "$APPLE_API_ISSUER_ID" \
+            --wait \
+            --output-format json > "$notary_result"
+          /bin/cat "$notary_result"
+          notary_status="$(/usr/bin/plutil -extract status raw -o - "$notary_result")"
+          if [ "$notary_status" != "Accepted" ]; then
+            echo "Apple notarization finished with status: $notary_status" >&2
+            exit 1
+          fi
+          /usr/bin/codesign --verify --strict --verbose=2 "$picker"
+      - name: Remove Apple signing credentials
+        if: always()
+        shell: /bin/bash --noprofile --norc -e -o pipefail {0}
+        run: |
+          keychain="$RUNNER_TEMP/model-dispatch.keychain-db"
+          if [ -e "$keychain" ]; then
+            /usr/bin/security delete-keychain "$keychain"
+          fi
+          /bin/rm -f \
+            "$RUNNER_TEMP/developer-id.p12" \
+            "$RUNNER_TEMP/notary-api-key.p8" \
+            "$RUNNER_TEMP/picker-macos-arm64.zip" \
+            "$RUNNER_TEMP/notary-result.json"
+      - name: Retain canonical signed macOS picker
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: picker-macos-arm64
+          path: ${{ runner.temp }}/unsigned-picker/picker-macos-arm64
+          if-no-files-found: error
+          overwrite: true
+
+  picker-sign-windows:
+    name: Sign Windows picker ${{ matrix.arch }}
+    needs: picker-unsigned
+    runs-on: windows-2025
+    permissions:
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            expected_machine: "8664"
+          - arch: arm64
+            expected_machine: "AA64"
+    steps:
+      - name: Download exact unsigned Windows picker
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: picker-unsigned-windows-${{ matrix.arch }}
+          path: ${{ runner.temp }}/unsigned-picker
+      - name: Sign and verify Windows picker
+        shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
+        env:
+          EXPECTED_PE_MACHINE: ${{ matrix.expected_machine }}
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+          $expectedPowerShell = [IO.Path]::GetFullPath(
+            [IO.Path]::Combine(
+              $env:SystemRoot,
+              "System32",
+              "WindowsPowerShell",
+              "v1.0",
+              "powershell.exe"
+            )
+          )
+          $actualPowerShell = [IO.Path]::GetFullPath(
+            [Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+          )
+          if (
+            -not [string]::Equals(
+              $actualPowerShell,
+              $expectedPowerShell,
+              [StringComparison]::OrdinalIgnoreCase
+            )
+          ) {
+            throw "Signing must run with the trusted system Windows PowerShell"
+          }
+          foreach ($name in @("WINDOWS_CERTIFICATE", "WINDOWS_CERTIFICATE_PASSWORD")) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              throw "Missing required Windows release secret: $name"
+            }
+          }
+
+          $unsignedRoot = [IO.Path]::GetFullPath(
+            [IO.Path]::Combine($env:RUNNER_TEMP, "unsigned-picker")
+          )
+          $picker = [IO.Path]::Combine(
+            $unsignedRoot,
+            "picker-windows-${{ matrix.arch }}.exe"
+          )
+          $entries = @([IO.Directory]::EnumerateFileSystemEntries($unsignedRoot))
+          $pickerInfo = [IO.FileInfo]::new($picker)
+          if (
+            $entries.Count -ne 1 -or
+            -not $pickerInfo.Exists -or
+            (($pickerInfo.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) -or
+            -not [string]::Equals(
+              [IO.Path]::GetFullPath($entries[0]),
+              $picker,
+              [StringComparison]::OrdinalIgnoreCase
+            )
+          ) {
+            throw "Expected exactly one regular unsigned Windows picker artifact"
+          }
+          $expectedMachine = [Convert]::ToUInt16($env:EXPECTED_PE_MACHINE, 16)
+          $stream = [IO.File]::OpenRead($picker)
+          $reader = [IO.BinaryReader]::new($stream)
+          try {
+            if ($stream.Length -lt 64 -or $reader.ReadUInt16() -ne 0x5a4d) {
+              throw "Unsigned Windows picker is not a PE executable"
+            }
+            $stream.Position = 0x3c
+            $peOffset = $reader.ReadUInt32()
+            if ($peOffset -gt $stream.Length - 6) {
+              throw "Unsigned Windows picker has an invalid PE header offset"
+            }
+            $stream.Position = $peOffset
+            if ($reader.ReadUInt32() -ne 0x00004550) {
+              throw "Unsigned Windows picker has an invalid PE signature"
+            }
+            $machine = $reader.ReadUInt16()
+            if ($machine -ne $expectedMachine) {
+              throw (
+                "Unsigned Windows picker has PE machine 0x{0:X4}, expected 0x{1:X4}" -f
+                $machine,
+                $expectedMachine
+              )
+            }
+          } finally {
+            $reader.Dispose()
+          }
+
+          $windowsSdkBin = [IO.Path]::Combine(
+            ${env:ProgramFiles(x86)},
+            "Windows Kits",
+            "10",
+            "bin"
+          )
+          $signtoolPath = $null
+          $signtoolVersion = [version]"0.0"
+          foreach (
+            $candidate in [IO.Directory]::EnumerateFiles(
+              $windowsSdkBin,
+              "signtool.exe",
+              [IO.SearchOption]::AllDirectories
+            )
+          ) {
+            $match = [regex]::Match(
+              $candidate,
+              '\\bin\\(?<version>\d+(?:\.\d+){2,3})\\x64\\signtool\.exe$',
+              [Text.RegularExpressions.RegexOptions]::IgnoreCase
+            )
+            if ($match.Success) {
+              $candidateVersion = [version]$match.Groups["version"].Value
+              if ($candidateVersion -gt $signtoolVersion) {
+                $signtoolPath = [IO.Path]::GetFullPath($candidate)
+                $signtoolVersion = $candidateVersion
+              }
+            }
+          }
+          if ([string]::IsNullOrEmpty($signtoolPath)) {
+            throw "No versioned x64 signtool.exe found under $windowsSdkBin"
+          }
+          [Console]::WriteLine("Using SignTool {0} at {1}", $signtoolVersion, $signtoolPath)
+
+          $certificate = [IO.Path]::Combine($env:RUNNER_TEMP, "code-signing.pfx")
+          [IO.File]::WriteAllBytes(
+            $certificate,
+            [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE)
+          )
+          & $signtoolPath sign /fd SHA256 /td SHA256 /tr https://timestamp.digicert.com /f $certificate /p $env:WINDOWS_CERTIFICATE_PASSWORD $picker
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $signtoolPath verify /pa /v $picker
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Remove Windows signing credentials
+        if: always()
+        shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
+        run: |
+          $expectedPowerShell = [IO.Path]::GetFullPath(
+            [IO.Path]::Combine(
+              $env:SystemRoot,
+              "System32",
+              "WindowsPowerShell",
+              "v1.0",
+              "powershell.exe"
+            )
+          )
+          $actualPowerShell = [IO.Path]::GetFullPath(
+            [Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+          )
+          if (
+            -not [string]::Equals(
+              $actualPowerShell,
+              $expectedPowerShell,
+              [StringComparison]::OrdinalIgnoreCase
+            )
+          ) {
+            throw "Cleanup must run with the trusted system Windows PowerShell"
+          }
+          $certificate = [IO.Path]::Combine($env:RUNNER_TEMP, "code-signing.pfx")
+          if ([IO.File]::Exists($certificate)) {
+            [IO.File]::Delete($certificate)
+          }
+      - name: Retain canonical signed Windows picker
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: picker-windows-${{ matrix.arch }}
+          path: ${{ runner.temp }}/unsigned-picker/picker-windows-${{ matrix.arch }}.exe
+          if-no-files-found: error
+          overwrite: true
+
+  stage-release:
+    name: Stage draft GitHub release
+    needs: [picker-unsigned, picker-linux-integration, picker-sign-macos, picker-sign-windows]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Download exact tested Linux x64 picker
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: picker-linux-x64
+          path: dist-picker
+      - name: Download exact tested Linux ARM64 picker
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: picker-linux-arm64
+          path: dist-picker
+      - name: Download exact signed macOS picker
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: picker-macos-arm64
+          path: dist-picker
+      - name: Download exact signed Windows x64 picker
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: picker-windows-x64
+          path: dist-picker
+      - name: Download exact signed Windows ARM64 picker
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: picker-windows-arm64
+          path: dist-picker
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-legal-assets
+          path: release-legal-assets
+      - name: Prepare canonical picker assets
+        id: draft
+        shell: bash
+        run: |
+          set -euo pipefail
+          canonical="$RUNNER_TEMP/release-picker-assets"
+          mkdir -p "$canonical"
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            test "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = "true"
+            expected_assets="$(mktemp)"
+            actual_assets="$(mktemp)"
+            printf '%s\n' \
+              LICENSE \
+              SHA256SUMS \
+              THIRD_PARTY_NOTICES.md \
+              picker-linux-arm64 \
+              picker-linux-x64 \
+              picker-macos-arm64 \
+              picker-windows-arm64.exe \
+              picker-windows-x64.exe |
+              LC_ALL=C sort > "$expected_assets"
+            gh release view "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --json assets \
+              --jq '.assets[].name' |
+              LC_ALL=C sort > "$actual_assets"
+            diff -u "$expected_assets" "$actual_assets"
+            gh release download "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --dir "$canonical"
+            (
+              cd "$canonical"
+              sha256sum --check --strict SHA256SUMS
+            )
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            cp dist-picker/picker-* "$canonical/"
+            cp release-legal-assets/LICENSE \
+              release-legal-assets/THIRD_PARTY_NOTICES.md \
+              "$canonical/"
+            (
+              cd "$canonical"
+              sha256sum \
+                LICENSE \
+                THIRD_PARTY_NOTICES.md \
+                picker-linux-arm64 \
+                picker-linux-x64 \
+                picker-macos-arm64 \
+                picker-windows-arm64.exe \
+                picker-windows-x64.exe > SHA256SUMS
+            )
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Attest picker assets for a new draft
+        if: steps.draft.outputs.exists != 'true'
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-path: ${{ runner.temp }}/release-picker-assets/*
+      - name: Verify commit-bound picker asset attestations
+        shell: bash
+        run: |
+          set -euo pipefail
+          canonical="$RUNNER_TEMP/release-picker-assets"
+          for asset_name in \
+            LICENSE \
+            SHA256SUMS \
+            THIRD_PARTY_NOTICES.md \
+            picker-linux-arm64 \
+            picker-linux-x64 \
+            picker-macos-arm64 \
+            picker-windows-arm64.exe \
+            picker-windows-x64.exe; do
+            asset="$canonical/$asset_name"
+            test -f "$asset"
+            verified=false
+            for attempt in {1..6}; do
+              if gh attestation verify "$asset" \
+                --repo "$GITHUB_REPOSITORY" \
+                --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/publish.yml" \
+                --signer-digest "$GITHUB_SHA" \
+                --source-digest "$GITHUB_SHA" \
+                --source-ref "$GITHUB_REF" \
+                --deny-self-hosted-runners; then
+                verified=true
+                break
+              fi
+              if [ "$attempt" -lt 6 ]; then
+                sleep 2
+              fi
+            done
+            if [ "$verified" != "true" ]; then
+              echo "No trusted attestation for $asset_name from $GITHUB_SHA" >&2
+              exit 1
+            fi
+          done
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Revalidate remote tag and create draft when needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag_ref="refs/tags/$GITHUB_REF_NAME"
+          peeled_ref="${tag_ref}^{}"
+          remote_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
+          remote_refs="$(git ls-remote "$remote_url" "$tag_ref" "$peeled_ref")"
+          direct_count="$(printf '%s\n' "$remote_refs" |
+            awk -v ref="$tag_ref" '$2 == ref { count++ } END { print count + 0 }')"
+          peeled_count="$(printf '%s\n' "$remote_refs" |
+            awk -v ref="$peeled_ref" '$2 == ref { count++ } END { print count + 0 }')"
+          if [ "$direct_count" -ne 1 ] || [ "$peeled_count" -gt 1 ]; then
+            echo "Remote release tag $tag_ref is missing or ambiguous" >&2
+            exit 1
+          fi
+          direct_sha="$(printf '%s\n' "$remote_refs" |
+            awk -v ref="$tag_ref" '$2 == ref { print $1 }')"
+          resolved_sha="$direct_sha"
+          if [ "$peeled_count" -eq 1 ]; then
+            resolved_sha="$(printf '%s\n' "$remote_refs" |
+              awk -v ref="$peeled_ref" '$2 == ref { print $1 }')"
+          fi
+          if [ "$resolved_sha" != "$GITHUB_SHA" ]; then
+            echo "Remote release tag resolves to $resolved_sha, expected $GITHUB_SHA" >&2
+            exit 1
+          fi
+
+          if [ "$DRAFT_EXISTS" != "true" ]; then
+            canonical="$RUNNER_TEMP/release-picker-assets"
+            gh release create "$GITHUB_REF_NAME" \
+              "$canonical/LICENSE" \
+              "$canonical/THIRD_PARTY_NOTICES.md" \
+              "$canonical/picker-linux-arm64" \
+              "$canonical/picker-linux-x64" \
+              "$canonical/picker-macos-arm64" \
+              "$canonical/picker-windows-arm64.exe" \
+              "$canonical/picker-windows-x64.exe" \
+              "$canonical/SHA256SUMS" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --generate-notes \
+              --title "$GITHUB_REF_NAME" \
+              --draft
+          fi
+        env:
+          DRAFT_EXISTS: ${{ steps.draft.outputs.exists }}
+          GH_TOKEN: ${{ github.token }}
+      - name: Retain canonical picker assets for npm and release jobs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-picker-assets
+          path: ${{ runner.temp }}/release-picker-assets/picker-*
+          if-no-files-found: error
+          overwrite: true
+      - name: Retain all canonical GitHub release assets
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-github-assets
+          path: ${{ runner.temp }}/release-picker-assets/*
+          if-no-files-found: error
+          overwrite: true
+
+  npm-package:
+    name: Build and test exact npm package
+    needs: stage-release
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    outputs:
+      filename: ${{ steps.package.outputs.filename }}
+      integrity: ${{ steps.package.outputs.integrity }}
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install Linux picker runtime and GUI automation
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev openbox x11-utils xdotool xvfb
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.14.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-picker-assets
+          path: bin
+      - name: Restore Unix picker executable modes
+        run: chmod 755 bin/picker-linux-arm64 bin/picker-linux-x64 bin/picker-macos-arm64
+      - run: bun install --frozen-lockfile
+      - name: Pin npm version required for trusted publishing
+        run: |
+          npm install --global npm@11.18.0
+          test "$(npm --version)" = "11.18.0"
+      - run: bun run build
+      - run: bun run check:release-package
+      - run: bun run test:package
+      - name: Pack the exact npm tarball
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/npm-package"
+          pack_json="$(npm pack --json --ignore-scripts --pack-destination "$RUNNER_TEMP/npm-package")"
+          filename="$(bun scripts/npm-pack-integrity.ts "$pack_json" filename)"
+          integrity="$(bun scripts/npm-pack-integrity.ts "$pack_json" integrity)"
+          tarball="$RUNNER_TEMP/npm-package/$filename"
+          test -f "$tarball"
+          {
+            printf 'filename=%s\n' "$filename"
+            printf 'integrity=%s\n' "$integrity"
+            printf 'tarball=%s\n' "$tarball"
+          } >> "$GITHUB_OUTPUT"
+      - name: Install tested OpenCode runtime
+        run: npm install --prefix "$RUNNER_TEMP/opencode-runtime" --package-lock=false opencode-ai@1.18.7
+      - name: Exercise exact npm tarball through OpenCode and native GUI
+        shell: bash
+        run: |
+          xvfb-run -a --server-args="-screen 0 1280x1024x24" \
+            bash scripts/run-with-openbox.sh \
+              bun run test:package:native:opencode
+        env:
+          GDK_BACKEND: x11
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          MODEL_DISPATCH_TEST_PACKAGE_TARBALL: ${{ steps.package.outputs.tarball }}
+          OPENCODE_BIN: ${{ runner.temp }}/opencode-runtime/node_modules/.bin/opencode
+          WEBKIT_DISABLE_COMPOSITING_MODE: "1"
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+      - name: Retain the exact tested npm tarball
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-npm-package
+          path: ${{ steps.package.outputs.tarball }}
+          if-no-files-found: error
+          overwrite: true
+
+  npm-native-smoke:
+    name: Installed npm picker smoke ${{ matrix.platform }}-${{ matrix.arch }}
+    needs: npm-package
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            arch: arm64
+            runner: ubuntu-22.04-arm
+          - platform: macos
+            arch: arm64
+            runner: macos-15
+          - platform: windows
+            arch: x64
+            runner: windows-2025
+          - platform: windows
+            arch: arm64
+            runner: windows-11-arm
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install Linux picker runtime
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev xvfb
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-npm-package
+          path: ${{ runner.temp }}/npm-package
+      - name: Exercise the exact Bun-installed native picker (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a --server-args="-screen 0 1280x1024x24" bun run scripts/smoke-installed-picker-tarball.ts
+        env:
+          GDK_BACKEND: x11
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          MODEL_DISPATCH_TEST_PACKAGE_TARBALL: ${{ runner.temp }}/npm-package/${{ needs.npm-package.outputs.filename }}
+          WEBKIT_DISABLE_COMPOSITING_MODE: "1"
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+      - name: Exercise the exact Bun-installed native picker
+        if: runner.os != 'Linux'
+        run: bun run scripts/smoke-installed-picker-tarball.ts
+        env:
+          MODEL_DISPATCH_TEST_PACKAGE_TARBALL: ${{ runner.temp }}/npm-package/${{ needs.npm-package.outputs.filename }}
+
+  npm-registry:
+    name: Validate npm artifact and registry state
+    needs: [npm-package, npm-native-smoke]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    outputs:
+      name: ${{ steps.package.outputs.name }}
+      version: ${{ steps.package.outputs.version }}
+      version_exists: ${{ steps.registry.outputs.version_exists }}
+      package_exists: ${{ steps.registry.outputs.package_exists }}
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.14.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-npm-package
+          path: ${{ runner.temp }}/npm-package
+      - name: Pin npm version required for trusted publishing
+        run: |
+          npm install --global npm@11.18.0
+          test "$(npm --version)" = "11.18.0"
+      - name: Validate the exact tested npm tarball
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$EXPECTED_PACKAGE_FILENAME" ] ||
+            [ "$(basename -- "$EXPECTED_PACKAGE_FILENAME")" != "$EXPECTED_PACKAGE_FILENAME" ]; then
+            echo "npm package artifact has an unsafe filename" >&2
+            exit 1
+          fi
+          case "$EXPECTED_PACKAGE_FILENAME" in
+            *.tgz) ;;
+            *)
+              echo "npm package artifact must be a .tgz file" >&2
+              exit 1
+              ;;
+          esac
+
+          package_root="$RUNNER_TEMP/npm-package"
+          mapfile -t artifact_files < <(
+            find "$package_root" -maxdepth 1 -type f -printf '%f\n' |
+              LC_ALL=C sort
+          )
+          if [ "${#artifact_files[@]}" -ne 1 ] ||
+            [ "${artifact_files[0]:-}" != "$EXPECTED_PACKAGE_FILENAME" ]; then
+            echo "Expected exactly the tested npm package artifact" >&2
+            printf 'Downloaded files: %s\n' "${artifact_files[*]:-none}" >&2
+            exit 1
+          fi
+
+          tarball="$package_root/$EXPECTED_PACKAGE_FILENAME"
+          actual_integrity="$(node -e '
+            const { createHash } = require("node:crypto");
+            const { readFileSync } = require("node:fs");
+            const digest = createHash("sha512")
+              .update(readFileSync(process.argv[1]))
+              .digest("base64");
+            process.stdout.write("sha512-" + digest);
+          ' "$tarball")"
+          if [ "$actual_integrity" != "$EXPECTED_PACKAGE_INTEGRITY" ]; then
+            echo "Downloaded npm artifact integrity does not match the tested tarball" >&2
+            exit 1
+          fi
+
+          manifest="$RUNNER_TEMP/npm-package-manifest.json"
+          tar -xOf "$tarball" package/package.json > "$manifest"
+          package_name="$(node -e '
+            const value = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+            if (typeof value.name !== "string") process.exit(1);
+            process.stdout.write(value.name);
+          ' "$manifest")"
+          package_version="$(node -e '
+            const value = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+            if (typeof value.version !== "string") process.exit(1);
+            process.stdout.write(value.version);
+          ' "$manifest")"
+          if [ "$package_name" != "opencode-model-dispatch" ]; then
+            echo "Refusing to publish unexpected package $package_name" >&2
+            exit 1
+          fi
+          if [ "$package_version" != "${RELEASE_TAG#v}" ]; then
+            echo "Package version $package_version does not match $RELEASE_TAG" >&2
+            exit 1
+          fi
+          {
+            printf 'name=%s\n' "$package_name"
+            printf 'version=%s\n' "$package_version"
+            printf 'tarball=%s\n' "$tarball"
+          } >> "$GITHUB_OUTPUT"
+        env:
+          EXPECTED_PACKAGE_FILENAME: ${{ needs.npm-package.outputs.filename }}
+          EXPECTED_PACKAGE_INTEGRITY: ${{ needs.npm-package.outputs.integrity }}
+      - name: Check npm publication state
+        id: registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          version_error="$RUNNER_TEMP/npm-version-view-error.log"
+          package_error="$RUNNER_TEMP/npm-package-view-error.log"
+          version_exists=false
+          package_exists=false
+
+          if published="$(npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version 2>"$version_error")"; then
+            test "$published" = "$PACKAGE_VERSION"
+            version_exists=true
+            package_exists=true
+            echo "$PACKAGE_NAME@$PACKAGE_VERSION is already published; the workflow will verify it"
+          else
+            view_status=$?
+            if ! grep -Eq 'E404|404 Not Found' "$version_error"; then
+              cat "$version_error" >&2
+              exit "$view_status"
+            fi
+
+            if published_name="$(npm view "$PACKAGE_NAME" name 2>"$package_error")"; then
+              test "$published_name" = "$PACKAGE_NAME"
+              package_exists=true
+              echo "$PACKAGE_NAME exists; trusted publishing will publish version $PACKAGE_VERSION"
+            else
+              package_status=$?
+              if ! grep -Eq 'E404|404 Not Found' "$package_error"; then
+                cat "$package_error" >&2
+                exit "$package_status"
+              fi
+              echo "$PACKAGE_NAME does not exist; the one-time bootstrap path is required"
+            fi
+          fi
+
+          {
+            printf 'version_exists=%s\n' "$version_exists"
+            printf 'package_exists=%s\n' "$package_exists"
+          } >> "$GITHUB_OUTPUT"
+        env:
+          PACKAGE_NAME: ${{ steps.package.outputs.name }}
+          PACKAGE_VERSION: ${{ steps.package.outputs.version }}
+
+  npm-bootstrap:
+    name: Bootstrap first npm package publish
+    needs: [npm-package, npm-registry]
+    if: needs.npm-registry.outputs.version_exists != 'true' && needs.npm-registry.outputs.package_exists != 'true'
+    runs-on: ubuntu-22.04
+    environment: npm-bootstrap
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.14.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-npm-package
+          path: ${{ runner.temp }}/npm-package
+      - name: Pin npm version required for provenance
+        run: |
+          npm install --global npm@11.18.0
+          test "$(npm --version)" = "11.18.0"
+      - name: Revalidate the exact tested npm tarball
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$EXPECTED_PACKAGE_FILENAME" ] ||
+            [ "$(basename -- "$EXPECTED_PACKAGE_FILENAME")" != "$EXPECTED_PACKAGE_FILENAME" ]; then
+            echo "npm package artifact has an unsafe filename" >&2
+            exit 1
+          fi
+          package_root="$RUNNER_TEMP/npm-package"
+          mapfile -t artifact_files < <(
+            find "$package_root" -maxdepth 1 -type f -printf '%f\n' |
+              LC_ALL=C sort
+          )
+          if [ "${#artifact_files[@]}" -ne 1 ] ||
+            [ "${artifact_files[0]:-}" != "$EXPECTED_PACKAGE_FILENAME" ]; then
+            echo "Expected exactly the tested npm package artifact" >&2
+            exit 1
+          fi
+          tarball="$package_root/$EXPECTED_PACKAGE_FILENAME"
+          actual_integrity="$(node -e '
+            const { createHash } = require("node:crypto");
+            const { readFileSync } = require("node:fs");
+            const digest = createHash("sha512")
+              .update(readFileSync(process.argv[1]))
+              .digest("base64");
+            process.stdout.write("sha512-" + digest);
+          ' "$tarball")"
+          test "$actual_integrity" = "$EXPECTED_PACKAGE_INTEGRITY"
+          printf 'tarball=%s\n' "$tarball" >> "$GITHUB_OUTPUT"
+        env:
+          EXPECTED_PACKAGE_FILENAME: ${{ needs.npm-package.outputs.filename }}
+          EXPECTED_PACKAGE_INTEGRITY: ${{ needs.npm-package.outputs.integrity }}
+      - name: Publish the first version with a short-lived provenance identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag_ref="refs/tags/$GITHUB_REF_NAME"
+          peeled_ref="${tag_ref}^{}"
+          remote_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
+          remote_refs="$(git ls-remote "$remote_url" "$tag_ref" "$peeled_ref")"
+          direct_count="$(printf '%s\n' "$remote_refs" |
+            awk -v ref="$tag_ref" '$2 == ref { count++ } END { print count + 0 }')"
+          peeled_count="$(printf '%s\n' "$remote_refs" |
+            awk -v ref="$peeled_ref" '$2 == ref { count++ } END { print count + 0 }')"
+          if [ "$direct_count" -ne 1 ] || [ "$peeled_count" -gt 1 ]; then
+            echo "Remote release tag $tag_ref is missing or ambiguous" >&2
+            exit 1
+          fi
+          direct_sha="$(printf '%s\n' "$remote_refs" |
+            awk -v ref="$tag_ref" '$2 == ref { print $1 }')"
+          resolved_sha="$direct_sha"
+          if [ "$peeled_count" -eq 1 ]; then
+            resolved_sha="$(printf '%s\n' "$remote_refs" |
+              awk -v ref="$peeled_ref" '$2 == ref { print $1 }')"
+          fi
+          if [ "$resolved_sha" != "$GITHUB_SHA" ]; then
+            echo "Remote release tag resolves to $resolved_sha, expected $GITHUB_SHA" >&2
+            exit 1
+          fi
+
+          if [ -z "${NPM_BOOTSTRAP_TOKEN:-}" ]; then
+            echo "NPM_BOOTSTRAP_TOKEN is required only while the npm package name is unpublished" >&2
+            exit 1
+          fi
+          bootstrap_config="$RUNNER_TEMP/npm-bootstrap.npmrc"
+          trap 'rm -f "$bootstrap_config"' EXIT
+          printf '%s\n' "//registry.npmjs.org/:_authToken=\${NPM_BOOTSTRAP_TOKEN}" > "$bootstrap_config"
+          npm publish "$PACKAGE_TARBALL" \
+            --userconfig "$bootstrap_config" \
+            --provenance \
+            --access public
+        env:
+          NPM_BOOTSTRAP_TOKEN: ${{ secrets.NPM_BOOTSTRAP_TOKEN }}
+          PACKAGE_TARBALL: ${{ steps.package.outputs.tarball }}
+
+  npm:
+    name: Publish npm package with trusted publishing
+    needs: [npm-package, npm-registry]
+    if: needs.npm-registry.outputs.version_exists != 'true' && needs.npm-registry.outputs.package_exists == 'true'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.14.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-npm-package
+          path: ${{ runner.temp }}/npm-package
+      - name: Pin npm version required for trusted publishing
+        run: |
+          npm install --global npm@11.18.0
+          test "$(npm --version)" = "11.18.0"
+      - name: Revalidate the exact tested npm tarball
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$EXPECTED_PACKAGE_FILENAME" ] ||
+            [ "$(basename -- "$EXPECTED_PACKAGE_FILENAME")" != "$EXPECTED_PACKAGE_FILENAME" ]; then
+            echo "npm package artifact has an unsafe filename" >&2
+            exit 1
+          fi
+          package_root="$RUNNER_TEMP/npm-package"
+          mapfile -t artifact_files < <(
+            find "$package_root" -maxdepth 1 -type f -printf '%f\n' |
+              LC_ALL=C sort
+          )
+          if [ "${#artifact_files[@]}" -ne 1 ] ||
+            [ "${artifact_files[0]:-}" != "$EXPECTED_PACKAGE_FILENAME" ]; then
+            echo "Expected exactly the tested npm package artifact" >&2
+            exit 1
+          fi
+          tarball="$package_root/$EXPECTED_PACKAGE_FILENAME"
+          actual_integrity="$(node -e '
+            const { createHash } = require("node:crypto");
+            const { readFileSync } = require("node:fs");
+            const digest = createHash("sha512")
+              .update(readFileSync(process.argv[1]))
+              .digest("base64");
+            process.stdout.write("sha512-" + digest);
+          ' "$tarball")"
+          test "$actual_integrity" = "$EXPECTED_PACKAGE_INTEGRITY"
+          printf 'tarball=%s\n' "$tarball" >> "$GITHUB_OUTPUT"
+        env:
+          EXPECTED_PACKAGE_FILENAME: ${{ needs.npm-package.outputs.filename }}
+          EXPECTED_PACKAGE_INTEGRITY: ${{ needs.npm-package.outputs.integrity }}
+      - name: Publish with trusted publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag_ref="refs/tags/$GITHUB_REF_NAME"
+          peeled_ref="${tag_ref}^{}"
+          remote_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
+          remote_refs="$(git ls-remote "$remote_url" "$tag_ref" "$peeled_ref")"
+          direct_count="$(printf '%s\n' "$remote_refs" |
+            awk -v ref="$tag_ref" '$2 == ref { count++ } END { print count + 0 }')"
+          peeled_count="$(printf '%s\n' "$remote_refs" |
+            awk -v ref="$peeled_ref" '$2 == ref { count++ } END { print count + 0 }')"
+          if [ "$direct_count" -ne 1 ] || [ "$peeled_count" -gt 1 ]; then
+            echo "Remote release tag $tag_ref is missing or ambiguous" >&2
+            exit 1
+          fi
+          direct_sha="$(printf '%s\n' "$remote_refs" |
+            awk -v ref="$tag_ref" '$2 == ref { print $1 }')"
+          resolved_sha="$direct_sha"
+          if [ "$peeled_count" -eq 1 ]; then
+            resolved_sha="$(printf '%s\n' "$remote_refs" |
+              awk -v ref="$peeled_ref" '$2 == ref { print $1 }')"
+          fi
+          if [ "$resolved_sha" != "$GITHUB_SHA" ]; then
+            echo "Remote release tag resolves to $resolved_sha, expected $GITHUB_SHA" >&2
+            exit 1
+          fi
+
+          if [ -n "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "trusted publishing refuses to run while NODE_AUTH_TOKEN is set" >&2
+            exit 1
+          fi
+          npm publish "$PACKAGE_TARBALL" \
+            --provenance \
+            --access public
+        env:
+          PACKAGE_TARBALL: ${{ steps.package.outputs.tarball }}
+
+  npm-verify:
+    name: Verify published npm package
+    needs: [npm-package, npm-registry, npm-bootstrap, npm]
+    if: >-
+      always() &&
+      needs.npm-package.result == 'success' &&
+      needs.npm-registry.result == 'success' &&
+      (needs.npm-bootstrap.result == 'success' || needs.npm-bootstrap.result == 'skipped') &&
+      (needs.npm.result == 'success' || needs.npm.result == 'skipped')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.14.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-npm-package
+          path: ${{ runner.temp }}/npm-package
+      - name: Pin npm version used for provenance verification
+        run: |
+          npm install --global npm@11.18.0
+          test "$(npm --version)" = "11.18.0"
+      - name: Revalidate the exact npm tarball
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$EXPECTED_PACKAGE_FILENAME" ] ||
+            [ "$(basename -- "$EXPECTED_PACKAGE_FILENAME")" != "$EXPECTED_PACKAGE_FILENAME" ]; then
+            echo "npm package artifact has an unsafe filename" >&2
+            exit 1
+          fi
+          case "$EXPECTED_PACKAGE_FILENAME" in
+            *.tgz) ;;
+            *)
+              echo "npm package artifact must be a .tgz file" >&2
+              exit 1
+              ;;
+          esac
+
+          tarball="$RUNNER_TEMP/npm-package/$EXPECTED_PACKAGE_FILENAME"
+          test -f "$tarball"
+          actual_integrity="$(node -e '
+            const { createHash } = require("node:crypto");
+            const { readFileSync } = require("node:fs");
+            const digest = createHash("sha512")
+              .update(readFileSync(process.argv[1]))
+              .digest("base64");
+            process.stdout.write("sha512-" + digest);
+          ' "$tarball")"
+          if [ "$actual_integrity" != "$EXPECTED_PACKAGE_INTEGRITY" ]; then
+            echo "Retained npm artifact integrity no longer matches the tested tarball" >&2
+            exit 1
+          fi
+
+          manifest="$RUNNER_TEMP/npm-verify-package-manifest.json"
+          tar -xOf "$tarball" package/package.json > "$manifest"
+          package_name="$(node -e '
+            const value = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+            if (typeof value.name !== "string") process.exit(1);
+            process.stdout.write(value.name);
+          ' "$manifest")"
+          package_version="$(node -e '
+            const value = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+            if (typeof value.version !== "string") process.exit(1);
+            process.stdout.write(value.version);
+          ' "$manifest")"
+          test "$package_name" = "opencode-model-dispatch"
+          test "$package_version" = "${RELEASE_TAG#v}"
+          {
+            printf 'name=%s\n' "$package_name"
+            printf 'version=%s\n' "$package_version"
+          } >> "$GITHUB_OUTPUT"
+        env:
+          EXPECTED_PACKAGE_FILENAME: ${{ needs.npm-package.outputs.filename }}
+          EXPECTED_PACKAGE_INTEGRITY: ${{ needs.npm-package.outputs.integrity }}
+      - name: Verify public npm package and provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          view_error="$RUNNER_TEMP/npm-view-error.log"
+          registry_version=""
+          registry_integrity=""
+          provenance_url=""
+          for attempt in {1..12}; do
+            if registry_version="$(npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version 2>"$view_error")" &&
+              registry_integrity="$(npm view "$PACKAGE_NAME@$PACKAGE_VERSION" dist.integrity 2>"$view_error")" &&
+              provenance_url="$(npm view "$PACKAGE_NAME@$PACKAGE_VERSION" dist.attestations.url 2>"$view_error")" &&
+              [ "$registry_version" = "$PACKAGE_VERSION" ] &&
+              [ -n "$registry_integrity" ] &&
+              [ -n "$provenance_url" ]; then
+              break
+            fi
+            if [ "$attempt" -eq 12 ]; then
+              cat "$view_error" >&2
+              echo "npm registry did not expose complete $PACKAGE_NAME@$PACKAGE_VERSION integrity and provenance metadata" >&2
+              exit 1
+            fi
+            sleep 5
+          done
+
+          if [ "$EXPECTED_PACKAGE_INTEGRITY" != "$registry_integrity" ]; then
+            echo "published package integrity does not match the exact tested tarball" >&2
+            exit 1
+          fi
+
+          verify_root="$RUNNER_TEMP/npm-provenance-verification"
+          mkdir -p "$verify_root"
+          printf '%s\n' '{"name":"npm-provenance-verification","private":true}' > "$verify_root/package.json"
+          npm install \
+            --ignore-scripts \
+            --omit=dev \
+            --omit=optional \
+            --legacy-peer-deps \
+            --prefix "$verify_root" \
+            "$PACKAGE_NAME@$PACKAGE_VERSION"
+          audit_json="$RUNNER_TEMP/npm-provenance-audit.json"
+          npm audit signatures \
+            --json \
+            --include-attestations \
+            --prefix "$verify_root" > "$audit_json"
+          bun scripts/verify-npm-provenance.ts \
+            "$audit_json" \
+            "$PACKAGE_NAME" \
+            "$PACKAGE_VERSION" \
+            "$EXPECTED_PACKAGE_INTEGRITY" \
+            "$GITHUB_REPOSITORY" \
+            ".github/workflows/publish.yml" \
+            "$GITHUB_REF" \
+            "$GITHUB_SHA"
+          echo "verified public npm integrity and signed provenance for $PACKAGE_NAME@$PACKAGE_VERSION"
+        env:
+          EXPECTED_PACKAGE_INTEGRITY: ${{ needs.npm-package.outputs.integrity }}
+          PACKAGE_NAME: ${{ steps.package.outputs.name }}
+          PACKAGE_VERSION: ${{ steps.package.outputs.version }}
+
+  manual-integration:
+    name: Require recorded TUI and Desktop evidence
+    needs: validate
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - run: bun run check:manual-gate
+
+  release:
+    name: Publish GitHub release
+    needs: [stage-release, npm-verify]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-github-assets
+          path: expected-release
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-notes
+          path: release-notes
+      - name: Revalidate and publish the draft release
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_notes="$RUNNER_TEMP/release-notes/release-notes.md"
+          test -s "$release_notes"
+          test "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = "true"
+
+          expected_assets="$(mktemp)"
+          actual_assets="$(mktemp)"
+          printf '%s\n' \
+            LICENSE \
+            SHA256SUMS \
+            THIRD_PARTY_NOTICES.md \
+            picker-linux-arm64 \
+            picker-linux-x64 \
+            picker-macos-arm64 \
+            picker-windows-arm64.exe \
+            picker-windows-x64.exe |
+            LC_ALL=C sort > "$expected_assets"
+          gh release view "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json assets \
+            --jq '.assets[].name' |
+            LC_ALL=C sort > "$actual_assets"
+          diff -u "$expected_assets" "$actual_assets"
+
+          draft_assets="$(mktemp -d)"
+          gh release download "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir "$draft_assets"
+          (
+            cd expected-release
+            sha256sum --check --strict SHA256SUMS
+          )
+          diff -u expected-release/SHA256SUMS "$draft_assets/SHA256SUMS"
+          (
+            cd "$draft_assets"
+            sha256sum --check --strict SHA256SUMS
+          )
+          for asset in \
+            LICENSE \
+            THIRD_PARTY_NOTICES.md \
+            picker-linux-arm64 \
+            picker-linux-x64 \
+            picker-macos-arm64 \
+            picker-windows-arm64.exe \
+            picker-windows-x64.exe; do
+            cmp --silent "expected-release/$asset" "$draft_assets/$asset"
+          done
+
+          tag_ref="refs/tags/$GITHUB_REF_NAME"
+          peeled_ref="${tag_ref}^{}"
+          remote_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
+          remote_refs="$(git ls-remote "$remote_url" "$tag_ref" "$peeled_ref")"
+          direct_count="$(printf '%s\n' "$remote_refs" |
+            awk -v ref="$tag_ref" '$2 == ref { count++ } END { print count + 0 }')"
+          peeled_count="$(printf '%s\n' "$remote_refs" |
+            awk -v ref="$peeled_ref" '$2 == ref { count++ } END { print count + 0 }')"
+          if [ "$direct_count" -ne 1 ] || [ "$peeled_count" -gt 1 ]; then
+            echo "Remote release tag $tag_ref is missing or ambiguous" >&2
+            exit 1
+          fi
+          direct_sha="$(printf '%s\n' "$remote_refs" |
+            awk -v ref="$tag_ref" '$2 == ref { print $1 }')"
+          resolved_sha="$direct_sha"
+          if [ "$peeled_count" -eq 1 ]; then
+            resolved_sha="$(printf '%s\n' "$remote_refs" |
+              awk -v ref="$peeled_ref" '$2 == ref { print $1 }')"
+          fi
+          if [ "$resolved_sha" != "$GITHUB_SHA" ]; then
+            echo "Remote release tag resolves to $resolved_sha, expected $GITHUB_SHA" >&2
+            exit 1
+          fi
+
+          gh release edit "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file "$release_notes" \
+            --draft=false
         env:
           GH_TOKEN: ${{ github.token }}

@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "cargoAboutVersion": "0.9.1",
+  "components": [
+    {
+      "name": "@opencode-ai/sdk",
+      "version": "1.18.7",
+      "license": "MIT",
+      "source": "https://github.com/anomalyco/opencode/tree/v1.18.7/packages/sdk/js",
+      "usage": "Bundled into the npm plugin JavaScript output.",
+      "manifest": "package.json",
+      "dependencySection": "devDependencies",
+      "dependencyName": "@opencode-ai/sdk",
+      "lockfile": "bun.lock",
+      "licenseFile": "third-party/licenses/opencode-MIT.txt"
+    },
+    {
+      "name": "OpenCode UI theme data and resolver code",
+      "version": "02981844b88aed33f06f1527da6c58d137975069",
+      "license": "MIT",
+      "source": "https://github.com/anomalyco/opencode/tree/02981844b88aed33f06f1527da6c58d137975069/packages/ui/src/theme",
+      "usage": "Adapted source and theme corpus bundled into the native picker webview.",
+      "licenseFile": "third-party/licenses/opencode-MIT.txt"
+    },
+    {
+      "name": "svelte",
+      "version": "5.56.8",
+      "license": "MIT",
+      "source": "https://github.com/sveltejs/svelte/tree/svelte%405.56.8/packages/svelte",
+      "usage": "Compiled runtime bundled into the native picker webview.",
+      "manifest": "picker/package.json",
+      "dependencySection": "dependencies",
+      "dependencyName": "svelte",
+      "lockfile": "picker/bun.lock",
+      "licenseFile": "third-party/licenses/svelte-MIT.txt"
+    },
+    {
+      "name": "@tauri-apps/api",
+      "version": "2.11.1",
+      "license": "MIT (selected from Apache-2.0 OR MIT)",
+      "source": "https://github.com/tauri-apps/tauri/tree/%40tauri-apps%2Fapi-v2.11.1/packages/api",
+      "usage": "Bundled into the native picker webview.",
+      "manifest": "picker/package.json",
+      "dependencySection": "dependencies",
+      "dependencyName": "@tauri-apps/api",
+      "lockfile": "picker/bun.lock",
+      "licenseFile": "third-party/licenses/tauri-MIT.txt"
+    }
+  ]
+}

@@ -1,6 +1,8 @@
 # 0009 Shadow-Agent Cache And Cleanup
 
-Parent: `docs/plan.md`
+Parent: [`PRODUCT.md`](../../PRODUCT.md)
+
+Status: superseded by ADR 0009; no shadow-agent cache exists.
 
 What to build: Implement persistent shadow-agent lifecycle state and cleanup rules so shadow agents remain available for active child sessions and are removed when orphaned, archived, missing, or stale.
 

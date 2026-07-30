@@ -1,6 +1,8 @@
 # 0008 Shadow-Agent Creation
 
-Parent: `docs/plan.md`
+Parent: [`PRODUCT.md`](../../PRODUCT.md)
+
+Status: superseded by ADR 0009; no shadow agents are created.
 
 What to build: Implement the pure shadow-agent creation helpers that generate internal lookup keys and config injection shapes for selected per-task models while preserving original agent identity.
 

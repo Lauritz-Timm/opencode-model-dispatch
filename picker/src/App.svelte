@@ -1,88 +1,275 @@
 <script lang="ts">
-  import { onMount } from "svelte"
+  import { onMount, tick } from "svelte"
   import { WebviewWindow } from "@tauri-apps/api/webviewWindow"
   import { getCurrentWindow } from "@tauri-apps/api/window"
-  import { buildModelSelectionSubmitParams, createModelSelectionState, filteredModelGroups, modelSelectionSubmitDisabled, shouldSubmitModelSelectionFromKeyboard, type ModelRef } from "./model-selection-reducer"
+  import {
+    APPLY_TO_ALL_TARGET,
+    applyModelSelectionAction,
+    buildModelSelectionSubmitParams,
+    createModelSelectionState,
+    filteredModelGroups,
+    modelRefForValue,
+    modelRefValue,
+    modelSelectionInputKey,
+    modelSelectionSubmitDisabled,
+    shouldSubmitModelSelectionFromKeyboard,
+    taskSelectionTarget,
+    variantsForSelectionTarget,
+  } from "./model-selection-reducer"
   import { createSetupState } from "./setup-reducer"
   import { resolveOpenCodeThemeCss } from "./opencode-theme-resolver"
   import { cssVariables, resolveTheme, themeTokens } from "./theme"
-  import { getPickerRuntimeRequest, resolvePickerRuntimeData, resolvePickerThemeHint, type PickerPreviewFixture } from "./runtime-request"
+  import {
+    getPickerRuntimeRequest,
+    resolvePickerRuntimeData,
+    resolvePickerThemeHint,
+    type PickerModelSelectionInput,
+    type PickerPreviewFixture,
+    type PickerSetupInput,
+  } from "./runtime-request"
   import { createTauriPickerRuntimeAdapter, type PickerRuntimeAdapter } from "./runtime-rpc"
+  import EffortSelect from "./EffortSelect.svelte"
   import ModelSelect from "./ModelSelect.svelte"
   import NumberRow from "./NumberRow.svelte"
   import ToggleRow from "./ToggleRow.svelte"
 
   const isDevPreview = import.meta.env.DEV
+  const maxBatchMs = 60_000
+  const maxPickerTimeoutMs = 600_000
+  const systemThemeMedia = "(prefers-color-scheme: light)"
+  const decisionFailureMessage = "The picker could not complete the action. Please try again."
   const params = typeof window === "undefined" ? new URLSearchParams() : new URLSearchParams(window.location.search)
   let runtimeRequest = getPickerRuntimeRequest()
   const isPreviewWindow = isDevPreview && params.get("preview") === "1"
   let previewFixture: PickerPreviewFixture | undefined
+  let modelState = createModelSelectionState({ tasks: [], models: [] })
+  let systemPrefersLight =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia(systemThemeMedia).matches
   $: runtimeData = resolvePickerRuntimeData(params, runtimeRequest, previewFixture)
   $: themeHint = resolvePickerThemeHint(params, runtimeRequest, runtimeData?.theme)
-  $: resolvedOpenCodeTheme = resolveOpenCodeThemeCss(themeHint)
+  $: resolvedOpenCodeTheme = resolveOpenCodeThemeCss(themeHint, systemPrefersLight)
   $: themeName = resolveTheme(resolvedOpenCodeTheme.mode)
   $: tokens = themeTokens[themeName]
   $: modelSelection = runtimeData?.modelSelection
   $: setup = runtimeData?.setup
-  $: modelState = createModelSelectionState(modelSelection ?? { tasks: [], models: [] })
   $: setupState = createSetupState({ settings: setup?.settings })
-  $: taskCount = modelSelection?.tasks.length ?? 0
-  $: modelGroups = filteredModelGroups(modelState)
+  $: taskCount = modelState.rows.length
+  $: applyToAllGroups = filteredModelGroups(modelState, APPLY_TO_ALL_TARGET)
   $: activeView = isPreviewWindow && params.get("view") === "settings" ? "settings" : setup && !modelSelection ? "settings" : "models"
   $: windowTitle = isDevPreview && !isPreviewWindow ? "Model Dispatch" : activeView === "settings" ? "Model Dispatch Settings" : "Model Dispatch"
-  $: modelOptions = modelSelection?.models ?? []
-  let selectedModels: Record<string, string> = {}
-  let applyToAllModel = ""
+  let hydratedSelectionKey = ""
+  let hydratedSetupKey = ""
   let runtimeAdapter: PickerRuntimeAdapter | undefined
+  let allowWindowClose = false
+  let decisionSent = false
+  let sendingDecision = false
+  let decisionError = ""
+  let setupScope: "global" | "project" = "global"
+  let addProjectConfigToGitignore = false
   $: dispatchEnabled = setupState.settings.dispatch.enabled
   $: privacyLoggingEnabled = setupState.settings.privacy.loggingEnabled
   $: batchMs = setupState.settings.dispatch.batchMs
   $: pickerTimeoutMs = setupState.settings.dispatch.pickerTimeoutMs
+  $: setupValid =
+    Number.isSafeInteger(batchMs) &&
+    batchMs > 0 &&
+    batchMs <= maxBatchMs &&
+    Number.isSafeInteger(pickerTimeoutMs) &&
+    pickerTimeoutMs > 0 &&
+    pickerTimeoutMs <= maxPickerTimeoutMs
+  $: hydrateModelSelection(modelSelection)
+  $: hydrateSetup(setup)
 
-  onMount(async () => {
-    if (isPreviewWindow) {
-      previewFixture = (await import("./preview-fixture.json")).default
-      return
+  onMount(() => {
+    let cleanup: (() => void) | undefined
+    let disposed = false
+    const systemThemeQuery =
+      typeof window !== "undefined" && typeof window.matchMedia === "function"
+        ? window.matchMedia(systemThemeMedia)
+        : undefined
+    const handleSystemThemeChange = (event: MediaQueryListEvent) => {
+      systemPrefersLight = event.matches
     }
-    if (isDevPreview) return
+    systemPrefersLight = systemThemeQuery?.matches ?? false
+    systemThemeQuery?.addEventListener("change", handleSystemThemeChange)
 
-    runtimeAdapter = await createTauriPickerRuntimeAdapter()
-    return await runtimeAdapter.start((request) => (runtimeRequest = request))
+    void (async () => {
+      if (isPreviewWindow) {
+        previewFixture = (await import("./preview-fixture.json")).default
+        return
+      }
+      if (isDevPreview) {
+        if (hasTauriRuntime()) await revealPickerWindow()
+        return
+      }
+
+      runtimeAdapter = await createTauriPickerRuntimeAdapter()
+      const unlistenRuntime = await runtimeAdapter.start(async (request) => {
+        runtimeRequest = request
+        await tick()
+        await revealPickerWindow()
+      })
+      const unlistenClose = await getCurrentWindow().onCloseRequested(async (event) => {
+        if (allowWindowClose) return
+        event.preventDefault()
+        await cancelPicker()
+      })
+      if (disposed) {
+        unlistenRuntime()
+        unlistenClose()
+      } else {
+        cleanup = () => {
+          unlistenRuntime()
+          unlistenClose()
+        }
+      }
+    })()
+    return () => {
+      disposed = true
+      systemThemeQuery?.removeEventListener("change", handleSystemThemeChange)
+      cleanup?.()
+    }
   })
 
-  function modelRefFromValue(value: string | undefined): ModelRef | undefined {
-    if (!value) return undefined
-    const model = modelOptions.find((candidate) => `${candidate.providerID}/${candidate.modelID}` === value)
-    return model ? { providerID: model.providerID, modelID: model.modelID } : undefined
+  function modelGroupsForRow(taskID: string) {
+    return filteredModelGroups(modelState, taskSelectionTarget(taskID))
   }
 
-  function currentModelSelectionState() {
-    const selections: Record<string, ModelRef> = {}
-    for (const row of modelState.rows) {
-      const model = modelRefFromValue(selectedModels[row.id])
-      if (model) selections[row.id] = model
-    }
-    return { ...modelState, selections }
+  function hydrateModelSelection(input: PickerModelSelectionInput | undefined) {
+    const key = modelSelectionInputKey(input)
+    if (key === hydratedSelectionKey) return
+    hydratedSelectionKey = key
+    modelState = createModelSelectionState(input ?? { tasks: [], models: [] })
+  }
+
+  function hydrateSetup(input: PickerSetupInput | undefined) {
+    const key = input
+      ? [
+          input.scope,
+          input.projectIsGitRepo,
+          input.projectConfigIgnored,
+          input.settings.privacy.loggingEnabled,
+          input.settings.dispatch.enabled,
+          input.settings.dispatch.batchMs,
+          input.settings.dispatch.pickerTimeoutMs,
+        ].join("\u0000")
+      : "none"
+    if (key === hydratedSetupKey) return
+    hydratedSetupKey = key
+    setupScope = input?.scope ?? "global"
+    addProjectConfigToGitignore = setupScope === "project" && input?.projectConfigIgnored === true
   }
 
   async function submitModelSelection() {
-    const state = currentModelSelectionState()
-    if (modelSelectionSubmitDisabled(state)) return
-    if (isDevPreview || isPreviewWindow || !runtimeAdapter) {
+    if (modelSelectionSubmitDisabled(modelState)) return
+    if (isDevPreview || isPreviewWindow) {
       closePreviewWindow()
       return
     }
-    await runtimeAdapter.submit(buildModelSelectionSubmitParams(state))
-    await getCurrentWindow().close()
+    if (!runtimeAdapter) {
+      decisionError = decisionFailureMessage
+      return
+    }
+    await completeRuntimeDecision(() => runtimeAdapter!.submit(buildModelSelectionSubmitParams(modelState)))
+  }
+
+  async function submitSetup() {
+    if (!setupValid) return
+    if (isDevPreview || isPreviewWindow) {
+      closePreviewWindow()
+      return
+    }
+    if (!runtimeAdapter) {
+      decisionError = decisionFailureMessage
+      return
+    }
+    await completeRuntimeDecision(() =>
+      runtimeAdapter!.submit({
+        mode: "setup",
+        scope: setupScope,
+        settings: {
+          privacy: { logging_enabled: privacyLoggingEnabled },
+          dispatch: {
+            enabled: dispatchEnabled,
+            batch_ms: batchMs,
+            picker_timeout_ms: pickerTimeoutMs,
+            technical_failure: "default_model",
+          },
+        },
+        addProjectConfigToGitignore: setupScope === "project" && addProjectConfigToGitignore,
+      }),
+    )
+  }
+
+  async function resetSetup() {
+    if (isDevPreview || isPreviewWindow) {
+      closePreviewWindow()
+      return
+    }
+    if (!runtimeAdapter) {
+      decisionError = decisionFailureMessage
+      return
+    }
+    await completeRuntimeDecision(() =>
+      runtimeAdapter!.submit({
+        mode: "setup",
+        action: "reset",
+        scope: setupScope,
+        addProjectConfigToGitignore: setupScope === "project" && addProjectConfigToGitignore,
+      }),
+    )
   }
 
   async function cancelPicker() {
-    if (isDevPreview || isPreviewWindow || !runtimeAdapter) {
+    if (isDevPreview || isPreviewWindow) {
       closePreviewWindow()
       return
     }
-    await runtimeAdapter.cancel()
-    await getCurrentWindow().close()
+    if (!runtimeAdapter) {
+      decisionError = decisionFailureMessage
+      return
+    }
+    await completeRuntimeDecision(() => runtimeAdapter!.cancel())
+  }
+
+  async function completeRuntimeDecision(send: () => Promise<void>) {
+    if (sendingDecision || decisionSent) return
+    sendingDecision = true
+    decisionError = ""
+    try {
+      await send()
+      decisionSent = true
+      allowWindowClose = true
+    } catch {
+      decisionError = decisionFailureMessage
+    } finally {
+      sendingDecision = false
+    }
+    if (decisionSent) await closePickerWindow()
+  }
+
+  async function closePickerWindow() {
+    try {
+      await getCurrentWindow().close()
+    } catch {
+      decisionError = decisionFailureMessage
+    }
+  }
+
+  async function requestPickerClose() {
+    if (allowWindowClose) {
+      await closePickerWindow()
+      return
+    }
+    await cancelPicker()
+  }
+
+  function handleScopeChange() {
+    if (setupScope === "project" && setup?.projectIsGitRepo) {
+      addProjectConfigToGitignore = true
+    }
   }
 
   function handleKeydown(event: KeyboardEvent) {
@@ -91,6 +278,7 @@
       void cancelPicker()
       return
     }
+    if (activeView !== "models") return
 
     const target = event.target instanceof HTMLElement ? event.target : undefined
     if (!shouldSubmitModelSelectionFromKeyboard({
@@ -98,7 +286,7 @@
       defaultPrevented: event.defaultPrevented,
       targetTagName: target?.tagName,
       targetIsContentEditable: target?.isContentEditable,
-    }, currentModelSelectionState())) return
+    }, modelState)) return
 
     event.preventDefault()
     void submitModelSelection()
@@ -126,7 +314,7 @@
       decorations: false,
       shadow: true,
       transparent: true,
-      theme: "dark",
+      theme: themeName,
       resizable: true,
       focus: true,
     })
@@ -152,9 +340,48 @@
     void getCurrentWindow().startDragging()
   }
 
+  function hasTauriRuntime() {
+    return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
+  }
+
+  async function revealPickerWindow() {
+    const pickerWindow = getCurrentWindow()
+    await pickerWindow.show()
+    void pickerWindow.setFocus().catch(() => undefined)
+  }
+
   function setAllModels(value: string) {
-    applyToAllModel = value
-    selectedModels = Object.fromEntries(modelState.rows.map((row) => [row.id, value]))
+    setModel(APPLY_TO_ALL_TARGET, value)
+  }
+
+  function setAllVariants(value: string) {
+    modelState = applyModelSelectionAction(modelState, {
+      type: "selectVariant",
+      target: APPLY_TO_ALL_TARGET,
+      variant: value,
+    })
+  }
+
+  function setRowModel(taskID: string, value: string) {
+    setModel(taskSelectionTarget(taskID), value)
+  }
+
+  function setRowVariant(taskID: string, value: string) {
+    modelState = applyModelSelectionAction(modelState, {
+      type: "selectVariant",
+      target: taskSelectionTarget(taskID),
+      variant: value,
+    })
+  }
+
+  function setModel(target: string, value: string) {
+    const model = modelRefForValue(modelState, target, value)
+    if (!model) return
+    modelState = applyModelSelectionAction(modelState, {
+      type: "selectModel",
+      target,
+      model,
+    })
   }
 </script>
 
@@ -174,13 +401,12 @@
   {#if !isPreviewWindow}
     <header class="app-chrome" role="presentation" on:mousedown={startWindowDrag}>
       <div class="chrome-left">
-        <span class="app-icon" aria-hidden="true"></span>
         <span>{windowTitle}</span>
       </div>
       <div class="chrome-controls" role="presentation" on:mousedown|stopPropagation>
         <button type="button" aria-label="Minimize" on:click={minimizeWindow}>−</button>
         <button type="button" aria-label="Maximize" on:click={toggleMaximizeWindow}>□</button>
-        <button type="button" aria-label="Close" on:click={cancelPicker}>×</button>
+        <button type="button" aria-label="Close" disabled={sendingDecision} on:click={requestPickerClose}>×</button>
       </div>
     </header>
   {/if}
@@ -194,7 +420,7 @@
         <button type="button" on:click={() => openPreviewWindow("settings")}>Open settings</button>
       </div>
     {:else if activeView === "models"}
-      <section class="picker-window" aria-labelledby="models-title">
+      <section class="picker-window" aria-labelledby="models-title" aria-busy={sendingDecision}>
         <header class="real-window-heading">
           <div>
             <h1 id="models-title">Choose models</h1>
@@ -216,32 +442,61 @@
               <strong>Apply to all</strong>
               <small>Set one model for this batch.</small>
             </span>
-            <ModelSelect bind:value={applyToAllModel} groups={modelGroups} ariaLabel="Apply model to all tasks" onChange={setAllModels} />
+            <div class="model-controls">
+              <ModelSelect value={modelRefValue(modelState.applyToAllModel)} groups={applyToAllGroups} ariaLabel="Apply model to all tasks" onChange={setAllModels} />
+              <EffortSelect
+                value={modelState.applyToAllModel?.variant ?? ""}
+                variants={variantsForSelectionTarget(modelState, APPLY_TO_ALL_TARGET)}
+                ariaLabel="Apply effort to all tasks"
+                onChange={setAllVariants}
+              />
+            </div>
           </div>
 
           {#each modelState.rows as row}
             <div class="model-row">
               <span class="model-row-copy">
                 <strong>{row.agentType}</strong>
-                <small>{row.description}</small>
+                {#if row.description}
+                  <small title={row.description}>{row.description}</small>
+                {/if}
               </span>
-              <ModelSelect bind:value={selectedModels[row.id]} groups={modelGroups} ariaLabel={`Model for ${row.agentType}`} />
+              <div class="model-controls">
+                <ModelSelect value={modelRefValue(modelState.selections[row.id])} groups={modelGroupsForRow(row.id)} ariaLabel={`Model for ${row.agentType}`} onChange={(value) => setRowModel(row.id, value)} />
+                <EffortSelect
+                  value={modelState.selections[row.id]?.variant ?? ""}
+                  variants={variantsForSelectionTarget(modelState, taskSelectionTarget(row.id))}
+                  ariaLabel={`Effort for ${row.agentType}`}
+                  onChange={(value) => setRowVariant(row.id, value)}
+                />
+              </div>
             </div>
           {/each}
         </div>
         {/if}
 
         <footer class="window-actions">
-          <button type="button" class="secondary" on:click={cancelPicker}>Cancel</button>
-          <button type="button" class="primary" disabled={modelSelectionSubmitDisabled(currentModelSelectionState())} on:click={submitModelSelection}>Start tasks</button>
+          {#if decisionError}<p class="decision-error" role="alert">{decisionError}</p>{/if}
+          <button type="button" class="secondary" disabled={sendingDecision || decisionSent} on:click={cancelPicker}>Cancel</button>
+          <button type="button" class="primary" disabled={sendingDecision || decisionSent || modelSelectionSubmitDisabled(modelState)} on:click={submitModelSelection}>Start tasks</button>
         </footer>
       </section>
     {:else}
-      <section class="settings-window" aria-labelledby="settings-title">
+      <section class="settings-window" aria-labelledby="settings-title" aria-busy={sendingDecision}>
         <div class="settings-main">
           <h1 id="settings-title" class="settings-title">Model Dispatch Settings</h1>
 
           <div class="settings-panel">
+            <label class="scope-row">
+              <span class="scope-copy">
+                <strong>Configuration scope</strong>
+                <small>Privacy logging stays global; dispatch settings can apply globally or only to this project.</small>
+              </span>
+              <select bind:value={setupScope} aria-label="Configuration scope" on:change={handleScopeChange}>
+                <option value="global">Global</option>
+                <option value="project">This project</option>
+              </select>
+            </label>
             <ToggleRow
               label="Enable model dispatch"
               description="Pause task calls and choose the model before subagents start."
@@ -257,7 +512,7 @@
             />
             <NumberRow
               label="Picker timeout"
-              description="Maximum time to wait for the picker process before falling back."
+              description="How long to wait for the picker window to start and connect."
               value={pickerTimeoutMs}
               suffix="ms"
               onChange={(value) => (pickerTimeoutMs = value)}
@@ -268,11 +523,23 @@
               checked={privacyLoggingEnabled}
               onChange={(checked) => (privacyLoggingEnabled = checked)}
             />
+            {#if setupScope === "project" && setup?.projectIsGitRepo}
+              <ToggleRow
+                label="Ignore project dispatch config"
+                description="Add .opencode/model-dispatch.json to this project's .gitignore."
+                checked={addProjectConfigToGitignore}
+                onChange={(checked) => (addProjectConfigToGitignore = checked)}
+              />
+            {:else if setupScope === "project"}
+              <p class="scope-notice">This directory is not a Git repository, so no .gitignore update is needed.</p>
+            {/if}
           </div>
 
           <footer class="window-actions settings-actions">
-            <button type="button" class="secondary" on:click={closePreviewWindow}>Cancel</button>
-            <button type="button" class="primary" on:click={closePreviewWindow}>Save changes</button>
+            {#if decisionError}<p class="decision-error" role="alert">{decisionError}</p>{/if}
+            <button type="button" class="secondary" disabled={sendingDecision || decisionSent} on:click={cancelPicker}>Cancel</button>
+            <button type="button" class="secondary" disabled={sendingDecision || decisionSent} on:click={resetSetup}>Reset defaults</button>
+            <button type="button" class="primary" disabled={sendingDecision || decisionSent || !setupValid} on:click={submitSetup}>Save changes</button>
           </footer>
         </div>
       </section>
@@ -284,7 +551,6 @@
   :global(body) {
     margin: 0;
     background: transparent;
-    color: var(--opencode-text);
     font-family: ui-sans-serif, system-ui, sans-serif;
   }
 
@@ -295,8 +561,13 @@
   .shell {
     min-height: 100vh;
     box-sizing: border-box;
-    background: var(--opencode-bg);
-    color: var(--opencode-text);
+    background: var(--v2-background-bg-base);
+    color: var(--v2-text-text-base);
+    color-scheme: dark;
+  }
+
+  .shell[data-color-scheme="light"] {
+    color-scheme: light;
   }
 
   .preview-shell {
@@ -326,7 +597,7 @@
     height: 40px;
     padding-left: 12px;
     border-bottom: 1px solid var(--v2-border-border-base);
-    background: var(--v2-background-bg-layer-01, var(--opencode-surface));
+    background: var(--v2-background-bg-layer-01);
     color: var(--v2-text-text-base);
     user-select: none;
   }
@@ -335,16 +606,8 @@
     display: inline-flex;
     align-items: center;
     min-width: 0;
-    gap: 8px;
     font-size: 12px;
     font-weight: 530;
-  }
-
-  .app-icon {
-    width: 14px;
-    height: 14px;
-    border-radius: 3px;
-    background: linear-gradient(90deg, var(--v2-text-text-base) 0 42%, transparent 42% 58%, var(--v2-text-text-base) 58% 100%);
   }
 
   .chrome-controls {
@@ -367,8 +630,8 @@
   }
 
   .chrome-controls button:last-child:hover {
-    background: var(--v2-text-text-danger, var(--opencode-danger));
-    color: var(--v2-background-bg-base);
+    background: var(--v2-text-text-danger);
+    color: var(--v2-text-text-contrast);
   }
 
   .panel {
@@ -388,7 +651,7 @@
     margin: 0;
     overflow: hidden;
     border-radius: 0;
-    background: var(--v2-background-bg-layer-01, var(--opencode-surface));
+    background: var(--v2-background-bg-layer-01);
     box-shadow: none;
     pointer-events: auto;
   }
@@ -399,7 +662,7 @@
 
   .eyebrow {
     margin: 0 0 6px;
-    color: var(--opencode-accent);
+    color: var(--v2-text-text-accent);
     font-size: 12px;
     font-weight: 700;
     letter-spacing: 0.08em;
@@ -414,7 +677,7 @@
   .summary {
     margin: 0 0 16px;
     max-width: 68ch;
-    color: var(--opencode-muted);
+    color: var(--v2-text-text-muted);
   }
 
   .launcher-actions {
@@ -452,7 +715,7 @@
 
   .launcher-actions button:focus-visible,
   .window-actions button:focus-visible {
-    outline: 1.5px solid var(--v2-border-border-active, var(--opencode-accent));
+    outline: 1.5px solid var(--v2-border-border-focus);
     outline-offset: 2px;
   }
 
@@ -499,7 +762,7 @@
   }
 
   .model-list {
-    overflow: hidden;
+    overflow: visible;
     border: 0.5px solid var(--v2-border-border-muted);
     border-radius: 6px;
     background: var(--v2-background-bg-layer-01);
@@ -509,20 +772,20 @@
     display: flex;
     flex-wrap: nowrap;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
     min-height: 44px;
-    padding: 7px 8px 7px 10px;
+    padding: 6px 8px 6px 10px;
     border-bottom: 0.5px solid var(--v2-border-border-base);
     transition: background-color 120ms ease-out, box-shadow 120ms ease-out;
   }
 
   .model-row:hover {
-    background: var(--v2-background-bg-layer-02, var(--v2-background-bg-layer-03));
+    background: var(--v2-background-bg-layer-02);
   }
 
   .model-row:focus-within {
-    background: var(--v2-background-bg-layer-02, var(--v2-background-bg-layer-03));
-    box-shadow: inset 0 0 0 1px var(--v2-border-border-active, var(--opencode-accent));
+    background: var(--v2-background-bg-layer-02);
+    box-shadow: inset 0 0 0 1px var(--v2-border-border-focus);
   }
 
   .model-row:last-child {
@@ -537,6 +800,28 @@
     gap: 3px;
   }
 
+  .model-controls {
+    display: flex;
+    flex-wrap: nowrap;
+    width: min(420px, 66%);
+    min-width: 0;
+    flex: 0 1 420px;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .model-controls :global(.model-select) {
+    width: auto;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .model-controls :global(.effort-select) {
+    width: 152px;
+    min-width: 152px;
+    flex: 0 0 152px;
+  }
+
   .model-row strong {
     font-size: 12px;
     font-weight: 540;
@@ -545,10 +830,13 @@
   }
 
   .model-row small {
+    overflow: hidden;
     color: var(--v2-text-text-muted);
     font-size: 11px;
     font-weight: 440;
     line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .apply-row {
@@ -587,15 +875,64 @@
     box-shadow: inset 0 0 0 0.5px var(--v2-border-border-muted);
   }
 
-  @media (max-width: 720px) {
+  .scope-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-block: 13px;
+    border-bottom: 0.5px solid var(--v2-border-border-base);
+  }
+
+  .scope-copy {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .scope-copy strong {
+    color: var(--v2-text-text-base);
+    font-size: 12px;
+    font-weight: 530;
+  }
+
+  .scope-copy small,
+  .scope-notice {
+    color: var(--v2-text-text-muted);
+    font-size: 10.5px;
+    line-height: 1.25;
+  }
+
+  .scope-row select {
+    min-height: 32px;
+    border: 0.5px solid var(--v2-border-border-muted);
+    border-radius: 6px;
+    padding: 6px 8px;
+    background: var(--v2-background-bg-base);
+    color: var(--v2-text-text-base);
+    font: inherit;
+    font-size: 12px;
+  }
+
+  .scope-notice {
+    margin: 0;
+    padding-block: 13px;
+  }
+
+  @media (max-width: 540px) {
     .model-row {
       flex-wrap: wrap;
     }
 
-    .model-row :global(.model-select) {
+    .model-controls {
       width: 100%;
+      min-width: 0;
+      flex: 1 0 100%;
     }
+  }
 
+  @media (max-width: 720px) {
     .settings-main {
       padding: 18px;
     }
@@ -603,6 +940,7 @@
 
   .window-actions {
     display: flex;
+    align-items: center;
     justify-content: flex-end;
     gap: 8px;
     margin-top: auto;
@@ -611,6 +949,13 @@
 
   .settings-actions {
     margin-top: 14px;
+  }
+
+  .decision-error {
+    margin: 0 auto 0 0;
+    color: var(--v2-text-text-danger);
+    font-size: 11px;
+    line-height: 1.3;
   }
 
   .picker-window .window-actions {
@@ -635,7 +980,7 @@
   }
 
   .window-actions .primary:active:not(:disabled) {
-    background: var(--v2-text-text-subtle, var(--v2-text-text-muted));
+    background: var(--v2-text-text-faint);
   }
 
   .window-actions .secondary {

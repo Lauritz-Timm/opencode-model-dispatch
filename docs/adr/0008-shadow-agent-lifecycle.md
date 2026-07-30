@@ -1,5 +1,8 @@
 # ADR 0008: Shadow Agent Lifecycle and Cleanup
 
+Status: superseded by [ADR 0009](./0009-child-message-model-override.md). No
+shadow agents are created by the released design.
+
 ## Context
 
 Shadow agents may be referenced by child sessions after a task completes. If the

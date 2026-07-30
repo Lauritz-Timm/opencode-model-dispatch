@@ -93,9 +93,12 @@ const themes: Record<string, DesktopTheme> = {
   zenburn,
 } as Record<string, DesktopTheme>
 
-export function resolveOpenCodeThemeCss(options: ResolveOpenCodeThemeOptions = {}): ResolvedOpenCodeThemeCss {
+export function resolveOpenCodeThemeCss(
+  options: ResolveOpenCodeThemeOptions = {},
+  systemPrefersLight = false,
+): ResolvedOpenCodeThemeCss {
   const themeID = normalizeThemeID(options.themeID)
-  const mode = normalizeMode(options.colorScheme)
+  const mode = normalizeMode(options.colorScheme, systemPrefersLight)
   const theme = themes[themeID] ?? themes["oc-2"]!
   const variant = mode === "dark" ? theme.dark : theme.light
   const cssText = `${themeToCss(resolveThemeVariant(variant, mode === "dark"))}\n  ${themeV2ToCss(resolveThemeVariantV2(variant, mode === "dark"))}`
@@ -105,12 +108,13 @@ export function resolveOpenCodeThemeCss(options: ResolveOpenCodeThemeOptions = {
 
 function normalizeThemeID(themeID: string | undefined): string {
   if (themeID === "oc-1") return "oc-2"
-  if (themeID && themes[themeID]) return themeID
+  if (themeID && Object.hasOwn(themes, themeID)) return themeID
   return "oc-2"
 }
 
-function normalizeMode(colorScheme: string | undefined): "light" | "dark" {
+function normalizeMode(colorScheme: string | undefined, systemPrefersLight: boolean): "light" | "dark" {
   if (colorScheme === "light" || colorScheme === "dark") return colorScheme
+  if (colorScheme === "system") return systemPrefersLight ? "light" : "dark"
   return "dark"
 }
 

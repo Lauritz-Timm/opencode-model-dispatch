@@ -25,6 +25,7 @@ export interface TechnicalParseFailure {
 const RESERVED_METHODS = new Set([
   "ready",
   "start",
+  "started",
   "validateModel",
   "refreshModels",
   "submit",

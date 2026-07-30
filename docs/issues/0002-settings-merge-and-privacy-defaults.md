@@ -1,6 +1,6 @@
 # 0002 Settings Merge And Privacy Defaults
 
-Parent: `docs/plan.md`
+Parent: [`PRODUCT.md`](../../PRODUCT.md)
 
 What to build: Implement the settings layer for global and project `model-dispatch.json` files, including default values, deep merge behavior, corrupt-config handling, and global-only privacy settings.
 

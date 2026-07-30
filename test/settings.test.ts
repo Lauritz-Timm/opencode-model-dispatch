@@ -1,9 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 
-import { DEFAULT_SETTINGS, readSettings, snoozeSetupFor24Hours, writeSettings } from "../src/settings"
+import {
+  DEFAULT_SETTINGS,
+  MAX_SETTINGS_FILE_BYTES,
+  readSettings,
+  snoozeSetupFor24Hours,
+  writeSettings,
+} from "../src/settings"
 
 const tempDirs: string[] = []
 
@@ -50,6 +56,27 @@ describe("settings", () => {
     })
   })
 
+  test("ignores unsafe project-controlled timer values", async () => {
+    const paths = await tempPath()
+    await writeSettings(paths.globalPath, {
+      dispatch: {
+        batch_ms: 250,
+        picker_timeout_ms: 1_000,
+      },
+    })
+    await writeSettings(paths.projectPath, {
+      dispatch: {
+        batch_ms: -1,
+        picker_timeout_ms: 1_000_000_000,
+      },
+    })
+
+    const result = await readSettings(paths)
+
+    expect(result.settings.dispatch.batch_ms).toBe(250)
+    expect(result.settings.dispatch.picker_timeout_ms).toBe(1_000)
+  })
+
   test("keeps privacy logging global-only", async () => {
     const paths = await tempPath()
     await writeSettings(paths.globalPath, { privacy: { logging_enabled: false } })
@@ -90,5 +117,44 @@ describe("settings", () => {
     expect(result.settings).toEqual(DEFAULT_SETTINGS)
     expect(result.warnings).toHaveLength(1)
     expect(result.warnings[0]).toContain("model-dispatch.json")
+  })
+
+  test("rejects a project settings symlink before following it", async () => {
+    if (process.platform === "win32") return
+    const paths = await tempPath()
+    const target = join(paths.dir, "outside-settings.json")
+    await writeFile(
+      target,
+      JSON.stringify({ dispatch: { enabled: true } }),
+      "utf8",
+    )
+    await mkdir(join(paths.dir, "project", ".opencode"), { recursive: true })
+    await symlink(target, paths.projectPath)
+
+    const result = await readSettings(paths)
+
+    expect(result.settings).toEqual(DEFAULT_SETTINGS)
+    expect(result.warnings).toEqual([
+      expect.stringContaining("must not be a symbolic link"),
+    ])
+  })
+
+  test("bounds settings reads before parsing", async () => {
+    const paths = await tempPath()
+    await mkdir(join(paths.dir, "project", ".opencode"), { recursive: true })
+    await writeFile(
+      paths.projectPath,
+      " ".repeat(MAX_SETTINGS_FILE_BYTES + 1),
+      "utf8",
+    )
+
+    const result = await readSettings(paths)
+
+    expect(result.settings).toEqual(DEFAULT_SETTINGS)
+    expect(result.warnings).toEqual([
+      expect.stringContaining(
+        `exceeds ${MAX_SETTINGS_FILE_BYTES} bytes`,
+      ),
+    ])
   })
 })

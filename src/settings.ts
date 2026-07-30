@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises"
+import { lstat, mkdir, open, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
 
 export type TechnicalFailureMode = "default_model"
@@ -59,10 +59,30 @@ export const DEFAULT_SETTINGS: ModelDispatchSettings = {
   appearance: {},
 }
 
+export const MAX_BATCH_MS = 60_000
+export const MAX_PICKER_TIMEOUT_MS = 600_000
+export const MAX_SETTINGS_FILE_BYTES = 64 * 1024
+
+export function isValidBatchMs(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 && value <= MAX_BATCH_MS
+}
+
+export function isValidPickerTimeoutMs(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 && value <= MAX_PICKER_TIMEOUT_MS
+}
+
 export async function readSettings(paths: SettingsPaths): Promise<ReadSettingsResult> {
   const warnings: string[] = []
-  const globalSettings = await readSettingsFile(paths.globalPath, warnings)
-  const projectSettings = await readSettingsFile(paths.projectPath, warnings)
+  const globalSettings = await readSettingsFile(
+    paths.globalPath,
+    warnings,
+    false,
+  )
+  const projectSettings = await readSettingsFile(
+    paths.projectPath,
+    warnings,
+    true,
+  )
 
   if (warnings.length > 0) {
     return { settings: cloneSettings(DEFAULT_SETTINGS), warnings }
@@ -109,10 +129,38 @@ function mergeSettings(globalSettings: PartialSettings | undefined, projectSetti
   }
 }
 
-async function readSettingsFile(path: string, warnings: string[]): Promise<PartialSettings | undefined> {
+async function readSettingsFile(
+  path: string,
+  warnings: string[],
+  rejectSymlink: boolean,
+): Promise<PartialSettings | undefined> {
   let raw: string
   try {
-    raw = await readFile(path, "utf8")
+    const before = await lstat(path)
+    if (rejectSymlink && before.isSymbolicLink()) {
+      throw new Error("project settings must not be a symbolic link")
+    }
+    const handle = await open(path, "r")
+    try {
+      const opened = await handle.stat()
+      if (!opened.isFile()) {
+        throw new Error("settings path must be a regular file")
+      }
+      if (
+        rejectSymlink &&
+        (before.dev !== opened.dev || before.ino !== opened.ino)
+      ) {
+        throw new Error("project settings changed while being opened")
+      }
+      if (opened.size > MAX_SETTINGS_FILE_BYTES) {
+        throw new Error(
+          `settings file exceeds ${MAX_SETTINGS_FILE_BYTES} bytes`,
+        )
+      }
+      raw = await readBoundedSettingsFile(handle)
+    } finally {
+      await handle.close()
+    }
   } catch (error) {
     if (isNotFound(error)) return undefined
     warnings.push(`${path}: ${(error as Error).message}`)
@@ -127,6 +175,29 @@ async function readSettingsFile(path: string, warnings: string[]): Promise<Parti
   }
 }
 
+async function readBoundedSettingsFile(
+  handle: Awaited<ReturnType<typeof open>>,
+): Promise<string> {
+  const buffer = Buffer.alloc(MAX_SETTINGS_FILE_BYTES + 1)
+  let offset = 0
+  while (offset < buffer.byteLength) {
+    const { bytesRead } = await handle.read(
+      buffer,
+      offset,
+      buffer.byteLength - offset,
+      offset,
+    )
+    if (bytesRead === 0) break
+    offset += bytesRead
+  }
+  if (offset > MAX_SETTINGS_FILE_BYTES) {
+    throw new Error(
+      `settings file exceeds ${MAX_SETTINGS_FILE_BYTES} bytes`,
+    )
+  }
+  return buffer.toString("utf8", 0, offset)
+}
+
 function decodeSettings(value: unknown): PartialSettings {
   if (!isRecord(value)) return {}
   const decoded: PartialSettings = {}
@@ -139,8 +210,10 @@ function decodeSettings(value: unknown): PartialSettings {
   if (isRecord(value.dispatch)) {
     decoded.dispatch = {}
     if (typeof value.dispatch.enabled === "boolean") decoded.dispatch.enabled = value.dispatch.enabled
-    if (typeof value.dispatch.batch_ms === "number") decoded.dispatch.batch_ms = value.dispatch.batch_ms
-    if (typeof value.dispatch.picker_timeout_ms === "number") decoded.dispatch.picker_timeout_ms = value.dispatch.picker_timeout_ms
+    if (isValidBatchMs(value.dispatch.batch_ms)) decoded.dispatch.batch_ms = value.dispatch.batch_ms
+    if (isValidPickerTimeoutMs(value.dispatch.picker_timeout_ms)) {
+      decoded.dispatch.picker_timeout_ms = value.dispatch.picker_timeout_ms
+    }
     if (value.dispatch.technical_failure === "default_model") decoded.dispatch.technical_failure = value.dispatch.technical_failure
   }
 

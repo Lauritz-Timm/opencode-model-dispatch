@@ -1,6 +1,11 @@
 import { chmod, copyFile, mkdir, readdir } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 
+import {
+  pickerTargetForNode,
+  pickerTargetForRustTarget,
+} from "../src/picker-targets"
+
 const pickerRoot = fileURLToPath(new URL("../picker", import.meta.url))
 const distPickerRoot = fileURLToPath(new URL("../dist-picker", import.meta.url))
 const pickerProject = new URL("../picker/package.json", import.meta.url)
@@ -13,6 +18,19 @@ const pickerTauriBin = new URL("../picker/node_modules/.bin/tauri", import.meta.
 const pickerTauriCmd = new URL("../picker/node_modules/.bin/tauri.cmd", import.meta.url)
 const pickerTauriExe = new URL("../picker/node_modules/.bin/tauri.exe", import.meta.url)
 const nativeBinaryBaseName = "opencode-model-dispatch-picker"
+const requestedRustTarget =
+  process.env.MODEL_DISPATCH_PICKER_RUST_TARGET?.trim()
+const pickerTarget = requestedRustTarget
+  ? pickerTargetForRustTarget(requestedRustTarget)
+  : pickerTargetForNode(process.platform, process.arch)
+
+if (!pickerTarget) {
+  const requested = requestedRustTarget
+    ? `Rust target ${requestedRustTarget}`
+    : `host ${process.platform}-${process.arch}`
+  console.error(`picker build failed: ${requested} has no release asset mapping`)
+  process.exit(1)
+}
 
 async function hasTypeScriptSource(path: string): Promise<boolean> {
   try {
@@ -62,7 +80,16 @@ if (
   process.exit(1)
 }
 
-const proc = Bun.spawn([process.execPath, "run", "tauri", "build", "--no-bundle", "--ci"], {
+const tauriArguments = [
+  process.execPath,
+  "run",
+  "tauri",
+  "build",
+  "--no-bundle",
+  "--ci",
+  ...(requestedRustTarget ? ["--target", requestedRustTarget] : []),
+]
+const proc = Bun.spawn(tauriArguments, {
   cwd: pickerRoot,
   stdout: "inherit",
   stderr: "inherit",
@@ -73,15 +100,17 @@ if (exitCode === 0) await copyReleaseAsset()
 process.exit(exitCode)
 
 async function copyReleaseAsset(): Promise<void> {
-  const platform = process.platform === "win32" ? "windows" : process.platform === "darwin" ? "macos" : process.platform
-  const arch = process.arch
-  const ext = platform === "windows" ? ".exe" : ""
-  const assetName = `picker-${platform}-${arch}${ext}`
+  const ext = pickerTarget.platform === "windows" ? ".exe" : ""
   const binaryName = `${nativeBinaryBaseName}${ext}`
-  const sourcePath = `${pickerTauriSrc}/target/release/${binaryName}`
+  const targetDirectory = requestedRustTarget
+    ? `${pickerTauriSrc}/target/${requestedRustTarget}`
+    : `${pickerTauriSrc}/target`
+  const sourcePath = `${targetDirectory}/release/${binaryName}`
   await mkdir(distPickerRoot, { recursive: true })
-  const destinationPath = `${distPickerRoot}/${assetName}`
+  const destinationPath = `${distPickerRoot}/${pickerTarget.assetName}`
   await copyFile(sourcePath, destinationPath)
-  if (platform !== "windows") await chmod(destinationPath, 0o755)
-  console.log(`picker release asset copied to dist-picker/${assetName}`)
+  if (pickerTarget.executable) await chmod(destinationPath, 0o755)
+  console.log(
+    `picker release asset copied to dist-picker/${pickerTarget.assetName}`,
+  )
 }

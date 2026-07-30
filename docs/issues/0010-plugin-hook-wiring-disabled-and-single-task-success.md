@@ -1,6 +1,9 @@
 # 0010 Plugin Hook Wiring: Disabled And Single-Task Success
 
-Parent: `docs/plan.md`
+Parent: [`PRODUCT.md`](../../PRODUCT.md)
+
+Status: implemented using child-message model override and session-model
+persistence; the shadow-agent details below are historical.
 
 What to build: Wire the plugin hooks for the disabled path and the first successful single-task dispatch path by composing settings, model catalog, picker process, shadow-agent creation, and task argument rewriting.
 

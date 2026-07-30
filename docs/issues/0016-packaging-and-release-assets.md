@@ -1,6 +1,6 @@
 # 0016 Packaging And Release Assets
 
-Parent: `docs/plan.md`
+Parent: [`PRODUCT.md`](../../PRODUCT.md)
 
 What to build: Package the plugin and picker for release so published npm installs do not require a Rust/Tauri toolchain and CI validates plugin tests, typecheck, picker build, packaging, and release asset behavior.
 

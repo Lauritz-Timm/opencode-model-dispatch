@@ -1,15 +1,20 @@
 # 0005 Picker JSON-RPC Protocol Contract
 
-Parent: `docs/plan.md`
+Parent: [`PRODUCT.md`](../../PRODUCT.md)
 
-What to build: Implement the persistent stdin/stdout NDJSON JSON-RPC protocol contract shared by the plugin and picker, including request/response framing, ids, parse failures, and v1 method names.
+Status: implemented with the catalog-at-launch v1 protocol. Earlier live
+validation/refresh method names are superseded by ADR 0005.
+
+What to build: Implement the stdin/stdout NDJSON JSON-RPC protocol shared by
+the plugin and picker, including framing, parse failures, lifecycle, and v1
+method names.
 
 Acceptance criteria:
-- Encodes and decodes NDJSON JSON-RPC request/response messages.
-- Matches responses by id.
+- Encodes and decodes one JSON-RPC notification per line.
 - Handles parse errors as technical failures with debug reason.
-- Supports `ready`, `validateModel`, `refreshModels`, `submit`, `cancel`, and `log`.
-- Reserves `resize`, `themeChanged`, and `focusChanged` without implementing live behavior.
+- Supports `ready`, `start`, `started`, `submit`, and `cancel`.
+- Treats parent stdin EOF, process exit, start-write failure, and lost stdio as
+  explicit lifecycle outcomes.
 - Contract tests verify framing compatibility with a picker-like harness.
 
 Blocked by: -

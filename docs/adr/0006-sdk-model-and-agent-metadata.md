@@ -18,6 +18,11 @@ OpenCode's model picker uses. Agent defaults come from `client.app.agents()`.
 Parent/current model preselection comes from the latest assistant message in the
 parent session.
 
+Reasoning effort is represented by OpenCode's provider-specific model
+`variants`. The picker exposes only variants advertised for the selected model.
+It labels the absence of an explicit variant as `Auto`, allowing OpenCode and
+the provider to retain their normal default.
+
 ## Consequences
 
 The picker reflects the user's existing OpenCode model setup without a separate

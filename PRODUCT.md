@@ -24,7 +24,11 @@ OpenCode-aligned, precise, quiet. The product should feel like a sharp developer
 
 - Treat OpenCode as the visual and interaction reference. The plugin runs its own UI, but should closely mirror OpenCode's language, density, theme tokens, and command-oriented behavior.
 - Optimize for fast model selection, keyboard confidence, and clear cancellation.
+- Keep effort optional: default to `Auto`, and show only the effort choices
+  supported by the selected model.
 - Avoid exposing task prompts or prompt-derived content in UI or logs.
+- Keep the dispatch control plane local-only: no hosted service, analytics,
+  telemetry endpoint, updater, or external UI assets.
 - Treat the picker as a transient command surface, not a dashboard.
 - Keep settings secondary and compact; the model picker is the primary release-critical surface.
 
