@@ -1,0 +1,53 @@
+name: Verify release-signing OIDC
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  validate-ref:
+    name: Require the protected main branch
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Reject non-main dispatches
+        shell: bash
+        run: test "$GITHUB_REF" = "refs/heads/main"
+
+  verify:
+    name: Verify immutable release-signing subject
+    needs: validate-ref
+    runs-on: ubuntu-24.04
+    environment: release-signing-windows
+    permissions:
+      id-token: write
+    steps:
+      - name: Verify immutable OIDC claims
+        shell: bash
+        env:
+          EXPECTED_AUDIENCE: api://AzureADTokenExchange
+          EXPECTED_ISSUER: https://token.actions.githubusercontent.com
+          EXPECTED_SUBJECT: repo:Lauritz-Timm@269186225/opencode-model-dispatch@1290427988:environment:release-signing-windows
+        run: |
+          set -euo pipefail
+          response="$(
+            curl --fail-with-body --silent --show-error --get \
+              -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              --data-urlencode "audience=${EXPECTED_AUDIENCE}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}"
+          )"
+          token="$(jq -er '.value' <<<"$response")"
+          payload="$(
+            node -e '
+              const part = process.argv[1]?.split(".")[1]
+              if (!part) process.exit(1)
+              process.stdout.write(Buffer.from(part, "base64url").toString("utf8"))
+            ' "$token"
+          )"
+          actual_subject="$(jq -er '.sub' <<<"$payload")"
+          actual_audience="$(jq -er '.aud' <<<"$payload")"
+          actual_issuer="$(jq -er '.iss' <<<"$payload")"
+          test "$actual_subject" = "$EXPECTED_SUBJECT"
+          test "$actual_audience" = "$EXPECTED_AUDIENCE"
+          test "$actual_issuer" = "$EXPECTED_ISSUER"
+          printf 'Verified OIDC subject: %s\n' "$actual_subject"

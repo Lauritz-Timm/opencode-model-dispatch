@@ -165,6 +165,42 @@ describe("installed native OpenCode integration support", () => {
     }
   })
 
+  test("rejects unknown native picker assets alongside an otherwise valid candidate", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "model-dispatch-unknown-asset-"))
+    const releaseBin = join(directory, "release-bin")
+    const installedBin = join(directory, "installed-bin")
+    const localPicker = join(directory, "picker-linux-x64")
+    await Promise.all([
+      mkdir(releaseBin, { recursive: true }),
+      mkdir(installedBin, { recursive: true }),
+      writeFile(localPicker, new Uint8Array([1, 2, 3, 4])),
+    ])
+
+    try {
+      await Promise.all([
+        writeFile(
+          join(installedBin, "picker-linux-x64"),
+          new Uint8Array([1, 2, 3, 4]),
+        ),
+        writeFile(
+          join(installedBin, "picker-linux-riscv64"),
+          new Uint8Array([5, 6, 7, 8]),
+        ),
+      ])
+
+      await expect(assertCandidatePickerAssets({
+        releaseBin,
+        localPicker,
+        installedBin,
+        localAssetName: "picker-linux-x64",
+      })).rejects.toThrow(
+        "received picker-linux-riscv64, picker-linux-x64",
+      )
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
   test("terminates a detached integration group gracefully", async () => {
     let running = true
     const signals: Array<NodeJS.Signals | 0> = []

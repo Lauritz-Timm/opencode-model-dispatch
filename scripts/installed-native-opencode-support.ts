@@ -51,9 +51,8 @@ export async function assertCandidatePickerAssets(options: {
   installedBin: string
   localAssetName: string
 }): Promise<"complete-release" | "local-candidate"> {
-  const knownAssets = new Set(releasePickerAssets.map((asset) => asset.name))
   const installedAssets = (await readdir(options.installedBin))
-    .filter((name) => knownAssets.has(name))
+    .filter((name) => name.startsWith("picker-"))
     .sort()
   const completeAssets = releasePickerAssets.map((asset) => asset.name).sort()
   if (

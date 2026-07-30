@@ -33,6 +33,7 @@ describe("release hardening", () => {
       readText(".github/workflows/ci.yml"),
       readText(".github/workflows/compatibility.yml"),
       readText(".github/workflows/publish.yml"),
+      readText(".github/workflows/verify-release-oidc.yml"),
     ])
     const combined = workflows.join("\n")
 
@@ -143,6 +144,29 @@ describe("release hardening", () => {
     )
     expect(windows).not.toContain("secrets.WINDOWS_CERTIFICATE")
     expect(windows).not.toContain("secrets.APPLE_CERTIFICATE")
+  })
+
+  test("manual OIDC proof is main-only, environment-bound, and secretless", async () => {
+    const workflow = await readText(
+      ".github/workflows/verify-release-oidc.yml",
+    )
+
+    expect(workflow).toContain("workflow_dispatch:")
+    expect(workflow).toContain("permissions: {}")
+    expect(workflow).toContain('test "$GITHUB_REF" = "refs/heads/main"')
+    expect(workflow).toContain("needs: validate-ref")
+    expect(workflow).toContain("environment: release-signing-windows")
+    expect(workflow).toContain("id-token: write")
+    expect(workflow).toContain("ACTIONS_ID_TOKEN_REQUEST_URL")
+    expect(workflow).toContain("api://AzureADTokenExchange")
+    expect(workflow).toContain("https://token.actions.githubusercontent.com")
+    expect(workflow).toContain(
+      "repo:Lauritz-Timm@269186225/opencode-model-dispatch@1290427988"
+      + ":environment:release-signing-windows",
+    )
+    expect(workflow).not.toContain("actions/checkout@")
+    expect(workflow).not.toContain("${{ secrets.")
+    expect(workflow).not.toContain("contents: write")
   })
 
   test("npm release files and staged top-level paths are exact allowlists", () => {

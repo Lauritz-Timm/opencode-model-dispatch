@@ -26,9 +26,14 @@ import {
 import {
   assertRegularFile,
   defaultManualCandidateOutput,
+  discardManualCandidatePromotion,
+  invalidateManualCandidate,
   manualCandidateGitIgnorePath,
+  manualCandidateInstallSpec,
   manualCandidateMetadataFilename,
+  manualCandidateTarballFilename,
   parseManualCandidateArguments,
+  promoteManualCandidate,
   resolveManualCandidateOutput,
   sha256,
   sha512Integrity,
@@ -90,6 +95,8 @@ async function prepareManualCandidate(output: string): Promise<void> {
   const target = requiredHostPicker()
   const outputPaths = resolveManualCandidateOutput(root, output)
   await assertIgnoredOutput(outputPaths.repositoryPath)
+  await ensureContainedDirectory(root, outputPaths.absolutePath)
+  await invalidateManualCandidate(outputPaths.absolutePath)
 
   await runInherited([process.execPath, "run", "build"], root)
   await runInherited([process.execPath, "run", "build:picker"], root)
@@ -102,7 +109,6 @@ async function prepareManualCandidate(output: string): Promise<void> {
       MODEL_DISPATCH_EXPECTED_PICKER_ARCH: target.arch,
     },
   )
-  await ensureContainedDirectory(root, outputPaths.absolutePath)
 
   const packageManifest = await readSourcePackageManifest()
   const pickerPath = `dist-picker/${target.assetName}`
@@ -117,9 +123,11 @@ async function prepareManualCandidate(output: string): Promise<void> {
   try {
     const stageRoot = join(work, "package")
     const packRoot = join(work, "pack")
+    const candidateRoot = join(work, "candidate")
     await Promise.all([
       mkdir(stageRoot, { recursive: true }),
       mkdir(packRoot, { recursive: true }),
+      mkdir(candidateRoot, { recursive: true }),
     ])
     await stageManualCandidatePackage({
       repositoryRoot: root,
@@ -152,15 +160,19 @@ async function prepareManualCandidate(output: string): Promise<void> {
         `npm pack must create exactly one safe .tgz file; received ${packedEntries.join(", ") || "none"}`,
       )
     }
-    const tarballFilename = packedEntries[0]!
-    const packedTarball = join(packRoot, tarballFilename)
+    const packedFilename = packedEntries[0]!
+    const packedTarball = join(packRoot, packedFilename)
     await assertPackedLocalPicker(packedTarball, target)
     const sourceIntegrity = await sha512Integrity(packedTarball)
-    const retainedTarball = join(outputPaths.absolutePath, tarballFilename)
-    await copyFile(packedTarball, retainedTarball)
-    const retainedIntegrity = await sha512Integrity(retainedTarball)
+    const tarballFilename = manualCandidateTarballFilename(
+      packedFilename,
+      commitSha,
+    )
+    const stagedTarball = join(candidateRoot, tarballFilename)
+    await copyFile(packedTarball, stagedTarball)
+    const retainedIntegrity = await sha512Integrity(stagedTarball)
     if (sourceIntegrity !== retainedIntegrity) {
-      throw new Error("Retained manual candidate tarball differs from npm pack output")
+      throw new Error("Staged manual candidate tarball differs from npm pack output")
     }
 
     const metadata: ManualCandidateMetadata = {
@@ -173,14 +185,18 @@ async function prepareManualCandidate(output: string): Promise<void> {
       pickerPath,
       pickerSha256: await sha256(join(root, ...pickerPath.split("/"))),
     }
+    const stagedMetadata = join(
+      candidateRoot,
+      manualCandidateMetadataFilename,
+    )
     await writeFile(
-      join(outputPaths.absolutePath, manualCandidateMetadataFilename),
+      stagedMetadata,
       `${JSON.stringify(metadata, null, 2)}\n`,
       "utf8",
     )
     await verifyManualCandidate({
       repositoryRoot: root,
-      outputRoot: outputPaths.absolutePath,
+      outputRoot: candidateRoot,
       expectedCommit: commitSha,
       picker: target,
       packageName: packageManifest.name,
@@ -196,6 +212,32 @@ async function prepareManualCandidate(output: string): Promise<void> {
       throw new Error(
         `Release source changed from ${commitSha} to ${finalCommitSha} while preparing the manual candidate`,
       )
+    }
+    let promoted = false
+    try {
+      await promoteManualCandidate({
+        outputRoot: outputPaths.absolutePath,
+        stagedTarball,
+        stagedMetadata,
+        tarballFilename,
+      })
+      promoted = true
+      await verifyManualCandidate({
+        repositoryRoot: root,
+        outputRoot: outputPaths.absolutePath,
+        expectedCommit: commitSha,
+        picker: target,
+        packageName: packageManifest.name,
+        packageVersion: packageManifest.version,
+      })
+    } catch (error) {
+      if (promoted) {
+        await discardManualCandidatePromotion(
+          outputPaths.absolutePath,
+          tarballFilename,
+        )
+      }
+      throw error
     }
     printEvidence(metadata, outputPaths.repositoryPath)
   } finally {
@@ -236,10 +278,9 @@ async function installManualCandidate(
       no_proxy: "127.0.0.1,localhost",
       OPENCODE_DISABLE_AUTOUPDATE: "true",
     }
-    const packageSpec =
-      `${candidate.metadata.packageName}@${candidate.metadata.packageVersion}`
+    const packageSpec = manualCandidateInstallSpec(candidate.metadata)
     await runInherited(
-      [openCode, "plugin", packageSpec],
+      [openCode, "plugin", packageSpec, "--pure"],
       project,
       environment,
     )

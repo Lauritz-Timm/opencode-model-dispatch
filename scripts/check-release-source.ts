@@ -18,6 +18,7 @@ export const REQUIRED_TRACKED_RELEASE_PATHS = [
   ".github/workflows/ci.yml",
   ".github/workflows/compatibility.yml",
   ".github/workflows/publish.yml",
+  ".github/workflows/verify-release-oidc.yml",
   "AGENTS.md",
   "CHANGELOG.md",
   "CODE_OF_CONDUCT.md",

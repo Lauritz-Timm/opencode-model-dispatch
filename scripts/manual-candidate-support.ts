@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto"
+import { createHash, randomBytes } from "node:crypto"
 import {
   chmod,
   copyFile,
@@ -6,6 +6,8 @@ import {
   lstat,
   mkdir,
   readFile,
+  rename,
+  rm,
 } from "node:fs/promises"
 import {
   basename,
@@ -24,6 +26,7 @@ export const manualCandidateMetadataFilename = "manual-candidate.json"
 const fullCommitPattern = /^[0-9a-f]{40}$/i
 const npmIntegrityPattern = /^sha512-[A-Za-z0-9+/]{86}==$/
 const sha256Pattern = /^[0-9a-f]{64}$/i
+const manualCandidateNoncePattern = /^[0-9a-f]{16}$/
 
 export interface ManualCandidateMetadata {
   schemaVersion: 1
@@ -123,6 +126,111 @@ export function manualCandidateGitIgnorePath(
   return `${repositoryPath.replace(/\/+$/, "")}/`
 }
 
+export function manualCandidateInstallSpec(
+  metadata: Pick<
+    ManualCandidateMetadata,
+    "commitSha" | "packageName" | "packageVersion"
+  >,
+  nonce = randomBytes(8).toString("hex"),
+): string {
+  assertManualCandidateCommit(metadata.commitSha)
+  assertManualCandidateNonce(nonce)
+  return [
+    "opencode-model-dispatch-manual",
+    metadata.commitSha.slice(0, 12).toLowerCase(),
+    `${nonce}@npm:${metadata.packageName}@${metadata.packageVersion}`,
+  ].join("-")
+}
+
+export function manualCandidateTarballFilename(
+  packedFilename: string,
+  commitSha: string,
+  nonce = randomBytes(8).toString("hex"),
+): string {
+  assertSafeTarballFilename(
+    packedFilename,
+    "Packed manual candidate tarball",
+  )
+  assertManualCandidateCommit(commitSha)
+  assertManualCandidateNonce(nonce)
+  return [
+    packedFilename.slice(0, -4),
+    commitSha.slice(0, 12).toLowerCase(),
+    `${nonce}.tgz`,
+  ].join("-")
+}
+
+export async function invalidateManualCandidate(
+  outputRoot: string,
+): Promise<void> {
+  const metadataPath = join(outputRoot, manualCandidateMetadataFilename)
+  let metadata: Awaited<ReturnType<typeof lstat>>
+  try {
+    metadata = await lstat(metadataPath)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return
+    throw error
+  }
+  if (metadata.isSymbolicLink() || !metadata.isFile()) {
+    throw new Error(
+      "Existing manual candidate metadata must be a real regular file",
+    )
+  }
+  await rm(metadataPath)
+}
+
+export async function promoteManualCandidate(options: {
+  outputRoot: string
+  stagedTarball: string
+  stagedMetadata: string
+  tarballFilename: string
+}): Promise<{ tarballPath: string; metadataPath: string }> {
+  assertSafeTarballFilename(
+    options.tarballFilename,
+    "Retained manual candidate tarball",
+  )
+  const tarballPath = join(options.outputRoot, options.tarballFilename)
+  const metadataPath = join(
+    options.outputRoot,
+    manualCandidateMetadataFilename,
+  )
+  await Promise.all([
+    assertRegularFile(options.stagedTarball, "staged manual candidate tarball"),
+    assertRegularFile(options.stagedMetadata, "staged manual candidate metadata"),
+    assertMissingPath(tarballPath, "retained manual candidate tarball"),
+    assertMissingPath(metadataPath, "retained manual candidate metadata"),
+  ])
+
+  await rename(options.stagedTarball, tarballPath)
+  try {
+    await rename(options.stagedMetadata, metadataPath)
+  } catch (error) {
+    await rm(tarballPath, { force: true })
+    throw error
+  }
+  return { tarballPath, metadataPath }
+}
+
+export async function discardManualCandidatePromotion(
+  outputRoot: string,
+  tarballFilename: string,
+): Promise<void> {
+  assertSafeTarballFilename(
+    tarballFilename,
+    "Retained manual candidate tarball",
+  )
+  await Promise.all([
+    removeCandidateLeaf(
+      join(outputRoot, manualCandidateMetadataFilename),
+      "manual candidate metadata",
+    ),
+    removeCandidateLeaf(
+      join(outputRoot, tarballFilename),
+      "manual candidate tarball",
+    ),
+  ])
+}
+
 export function readManualCandidateMetadata(
   value: unknown,
 ): ManualCandidateMetadata {
@@ -213,6 +321,7 @@ export async function verifyManualCandidate(options: {
     options.outputRoot,
     manualCandidateMetadataFilename,
   )
+  await assertRegularFile(metadataPath, "manual candidate metadata")
   const metadata = readManualCandidateMetadata(
     JSON.parse(await readFile(metadataPath, "utf8")) as unknown,
   )
@@ -270,6 +379,56 @@ export async function sha512Integrity(path: string): Promise<string> {
 
 export async function sha256(path: string): Promise<string> {
   return createHash("sha256").update(await readFile(path)).digest("hex")
+}
+
+async function assertMissingPath(path: string, label: string): Promise<void> {
+  try {
+    await lstat(path)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return
+    throw error
+  }
+  throw new Error(`${label} already exists and will not be overwritten`)
+}
+
+async function removeCandidateLeaf(
+  path: string,
+  label: string,
+): Promise<void> {
+  let metadata: Awaited<ReturnType<typeof lstat>>
+  try {
+    metadata = await lstat(path)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return
+    throw error
+  }
+  if (metadata.isDirectory() && !metadata.isSymbolicLink()) {
+    throw new Error(`${label} cleanup path must not be a directory`)
+  }
+  await rm(path)
+}
+
+function assertManualCandidateCommit(commitSha: string): void {
+  if (!fullCommitPattern.test(commitSha)) {
+    throw new Error("Manual candidate commitSha must be a full commit SHA")
+  }
+}
+
+function assertManualCandidateNonce(nonce: string): void {
+  if (!manualCandidateNoncePattern.test(nonce)) {
+    throw new Error(
+      "Manual candidate nonce must be exactly 16 lowercase hexadecimal characters",
+    )
+  }
+}
+
+function assertSafeTarballFilename(filename: string, label: string): void {
+  if (
+    basename(filename) !== filename
+    || !/^[A-Za-z0-9][A-Za-z0-9._-]*\.tgz$/.test(filename)
+  ) {
+    throw new Error(`${label} must be a safe .tgz basename`)
+  }
 }
 
 function requiredOptionValue(

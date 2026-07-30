@@ -106,6 +106,10 @@ function readySnapshot(
     vulnerabilityReporting: verified({ enabled: true }),
     immutableReleases: verified({ enabled: true, enforced_by_owner: false }),
     dependabotSecurityUpdates: verified({ enabled: true, paused: false }),
+    oidcSubjectCustomization: verified({
+      use_default: true,
+      use_immutable_subject: true,
+    }),
     mainRules: verified(completeMainRules),
     classicMainProtection: unavailable("classic branch protection is not configured"),
     releaseTagRulesets: verified([completeTagRuleset]),
@@ -159,6 +163,7 @@ describe("public repository release gate", () => {
       vulnerabilityReporting: unavailable("HTTP 401"),
       immutableReleases: unavailable("HTTP 403"),
       dependabotSecurityUpdates: unavailable("ambiguous HTTP 404"),
+      oidcSubjectCustomization: unavailable("HTTP 403"),
     }))
 
     expect(result.failures).toContain(
@@ -169,6 +174,9 @@ describe("public repository release gate", () => {
     )
     expect(result.failures).toContain(
       "GitHub Dependabot security updates could not be verified: ambiguous HTTP 404",
+    )
+    expect(result.failures).toContain(
+      "GitHub immutable OIDC subject customization could not be verified: HTTP 403",
     )
   })
 
@@ -191,6 +199,30 @@ describe("public repository release gate", () => {
     }))
     expect(paused.failures).toContain(
       "GitHub Dependabot security updates must not be paused",
+    )
+  })
+
+  test("requires the default immutable OIDC subject format", () => {
+    const disabled = publicRepositoryReadiness(readySnapshot({
+      oidcSubjectCustomization: verified({
+        use_default: true,
+        use_immutable_subject: false,
+      }),
+    }))
+    expect(disabled.failures).toContain(
+      "GitHub immutable OIDC subject customization must keep the default "
+      + "context and enable immutable owner/repository IDs",
+    )
+
+    const customContext = publicRepositoryReadiness(readySnapshot({
+      oidcSubjectCustomization: verified({
+        use_default: false,
+        use_immutable_subject: true,
+      }),
+    }))
+    expect(customContext.failures).toContain(
+      "GitHub immutable OIDC subject customization must keep the default "
+      + "context and enable immutable owner/repository IDs",
     )
   })
 
@@ -523,6 +555,9 @@ describe("GitHub readiness snapshot collection", () => {
       .toBe("Bearer settings-token")
     expect(seenAuthorization.get(`${API_ROOT}/automated-security-fixes`))
       .toBe("Bearer settings-token")
+    expect(seenAuthorization.get(
+      `${API_ROOT}/actions/oidc/customization/sub`,
+    )).toBe("Bearer settings-token")
     expect(seenAuthorization.get(`${API_ROOT}/branches/main/protection`))
       .toBe("Bearer settings-token")
   })
@@ -540,6 +575,10 @@ describe("GitHub readiness snapshot collection", () => {
     routes[`${API_ROOT}/automated-security-fixes`] = {
       status: 404,
       body: { message: "Not Found" },
+    }
+    routes[`${API_ROOT}/actions/oidc/customization/sub`] = {
+      status: 403,
+      body: { message: "Resource not accessible by integration" },
     }
 
     const snapshot = await collectPublicRepositorySnapshot({
@@ -567,6 +606,12 @@ describe("GitHub readiness snapshot collection", () => {
         "Dependabot security updates endpoint returned HTTP 404; "
         + "disabled and permission-hidden states are ambiguous",
     })
+    expect(snapshot.oidcSubjectCustomization).toEqual({
+      status: "unavailable",
+      reason:
+        "immutable OIDC subject customization endpoint returned HTTP 403; "
+        + "the token cannot verify this setting",
+    })
 
     const result = publicRepositoryReadiness(snapshot)
     expect(result.failures.some((failure) =>
@@ -577,6 +622,11 @@ describe("GitHub readiness snapshot collection", () => {
     )).toBe(true)
     expect(result.failures.some((failure) =>
       failure.startsWith("GitHub Dependabot security updates could not be verified:")
+    )).toBe(true)
+    expect(result.failures.some((failure) =>
+      failure.startsWith(
+        "GitHub immutable OIDC subject customization could not be verified:",
+      )
     )).toBe(true)
   })
 
@@ -694,6 +744,9 @@ function happyRoutes(): Record<string, FixtureResponse> {
     },
     [`${API_ROOT}/automated-security-fixes`]: {
       body: { enabled: true, paused: false },
+    },
+    [`${API_ROOT}/actions/oidc/customization/sub`]: {
+      body: { use_default: true, use_immutable_subject: true },
     },
     [`${API_ROOT}/rules/branches/main?per_page=100`]: {
       body: completeMainRules,

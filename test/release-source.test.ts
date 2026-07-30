@@ -65,6 +65,7 @@ describe("release source preflight", () => {
       "third-party/RUST_THIRD_PARTY_LICENSES.md",
       "SECURITY.md",
       ".github/workflows/publish.yml",
+      ".github/workflows/verify-release-oidc.yml",
       ".github/dependabot.yml",
     ])
     const failures = releaseSourceFailures(releaseSource({

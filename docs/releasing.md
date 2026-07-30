@@ -54,7 +54,7 @@ The command fails unless the tracked and untracked source is clean and
 `HEAD == origin/main`. It builds both plugin and local picker, stages only that
 fresh host picker, packs the result without lifecycle scripts, and writes:
 
-- `.manual-release/opencode-model-dispatch-<version>.tgz`;
+- `.manual-release/opencode-model-dispatch-<version>-<commit>-<nonce>.tgz`;
 - `.manual-release/manual-candidate.json`.
 
 The metadata is commit-bound and records the tarball SHA-512 SRI and picker
@@ -78,9 +78,10 @@ bun run release:manual-candidate:install -- --project "$manual_scratch"
 ```
 
 The installer exposes only the retained candidate and its locked local
-dependency graph through a temporary loopback registry. It runs
-`opencode plugin opencode-model-dispatch@<version>` in the empty project,
-confirms the tarball was fetched, and removes the registry override before the
+dependency graph through a temporary loopback registry. It runs `opencode
+plugin --pure` with a commit- and invocation-unique npm alias in the empty
+project, confirms the exact tarball was fetched instead of reused from
+OpenCode's global package cache, and removes the registry override before the
 live checks. Start the TUI in `$manual_scratch`, then fully quit it and open the
 same directory in OpenCode Desktop. Copy the five printed evidence values into
 the gate and sanitize the project path as documented there.
@@ -219,16 +220,62 @@ scope. Add a federated credential with:
   `:environment:release-signing-windows`.
 
 Enable GitHub's [immutable OIDC subject][github-immutable-oidc] before creating
-that federated credential, then read the repository setting back and use the
-exact returned `sub_claim_prefix`. For this repository, the expected immutable
-subject is:
+that federated credential. From an authenticated repository-administrator
+shell, use GitHub's [OIDC REST endpoint][github-oidc-rest] to keep the default
+context format while opting in to immutable owner and repository IDs:
+
+```sh
+gh api --method PUT \
+  -H "Accept: application/vnd.github+json" \
+  -H "X-GitHub-Api-Version: 2026-03-10" \
+  repos/Lauritz-Timm/opencode-model-dispatch/actions/oidc/customization/sub \
+  -F use_default=true \
+  -F use_immutable_subject=true
+```
+
+Read the setting back without changing it:
+
+```sh
+gh api \
+  -H "Accept: application/vnd.github+json" \
+  -H "X-GitHub-Api-Version: 2026-03-10" \
+  repos/Lauritz-Timm/opencode-model-dispatch/actions/oidc/customization/sub \
+  --jq '{use_default, use_immutable_subject}'
+```
+
+Both values must be `true`; `bun run check:public-repo` enforces this readback.
+The setting does not prove the environment suffix that a job's token will
+contain. Derive the expected subject from the current immutable IDs instead:
+
+```sh
+expected_subject="$(
+  gh api \
+    -H "Accept: application/vnd.github+json" \
+    -H "X-GitHub-Api-Version: 2026-03-10" \
+    repos/Lauritz-Timm/opencode-model-dispatch \
+    --jq '"repo:\(.owner.login)@\(.owner.id)/\(.name)@\(.id):environment:release-signing-windows"'
+)"
+test "$expected_subject" = \
+  "repo:Lauritz-Timm@269186225/opencode-model-dispatch@1290427988:environment:release-signing-windows"
+printf '%s\n' "$expected_subject"
+```
+
+For this repository, the expected immutable subject is:
 
 ```text
 repo:Lauritz-Timm@269186225/opencode-model-dispatch@1290427988:environment:release-signing-windows
 ```
 
-Do not assume the displayed value: verify it after opt-in before copying it to
-Entra. Store these identifiers as environment variables in the protected
+The final proof must come from a token minted for a job that names the protected
+`release-signing-windows` environment. Before adding the Entra federated
+credential, manually run the repository's `Verify release-signing OIDC`
+workflow on `main`, approve the environment, and require it to pass. The
+workflow has no checkout, repository write permission, or secret dependency;
+it decodes a one-time token and compares its exact `sub`, `aud`, and `iss`
+claims.
+
+Copy the verified subject into the Entra federated credential. Store these
+identifiers as environment variables in the protected
 `release-signing-windows` GitHub environment:
 
 - `AZURE_CLIENT_ID`
@@ -258,6 +305,7 @@ the Apple credentials or Windows configuration at repository level.
 [azure-quickstart]: https://learn.microsoft.com/en-us/azure/artifact-signing/quickstart
 [azure-pricing]: https://learn.microsoft.com/en-us/azure/artifact-signing/how-to-change-sku
 [github-immutable-oidc]: https://docs.github.com/en/actions/reference/security/oidc#immutable-subject-claims
+[github-oidc-rest]: https://docs.github.com/en/rest/actions/oidc
 
 ## Recovery
 

@@ -6,6 +6,7 @@ import {
   readFile,
   rm,
   stat,
+  symlink,
   writeFile,
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -14,8 +15,13 @@ import { describe, expect, test } from "bun:test"
 
 import type { PickerTarget } from "../src/picker-targets"
 import {
+  discardManualCandidatePromotion,
+  invalidateManualCandidate,
   manualCandidateGitIgnorePath,
+  manualCandidateInstallSpec,
+  manualCandidateTarballFilename,
   parseManualCandidateArguments,
+  promoteManualCandidate,
   readManualCandidateMetadata,
   resolveManualCandidateOutput,
   stageManualCandidatePackage,
@@ -40,6 +46,30 @@ describe("manual release candidate support", () => {
       .toBe(".manual-release/")
     expect(manualCandidateGitIgnorePath(".manual-release/custom/"))
       .toBe(".manual-release/custom/")
+  })
+
+  test("uses a commit- and invocation-unique npm alias for exact installation", () => {
+    const metadata = {
+      commitSha: "a".repeat(40),
+      packageName: "opencode-model-dispatch",
+      packageVersion: "0.1.0",
+    }
+    expect(manualCandidateInstallSpec(metadata, "0123456789abcdef")).toBe(
+      "opencode-model-dispatch-manual-aaaaaaaaaaaa-0123456789abcdef"
+      + "@npm:opencode-model-dispatch@0.1.0",
+    )
+    expect(() => manualCandidateInstallSpec(metadata, "not-random"))
+      .toThrow("16 lowercase hexadecimal")
+  })
+
+  test("gives retained tarballs a commit- and invocation-unique basename", () => {
+    expect(manualCandidateTarballFilename(
+      "opencode-model-dispatch-0.1.0.tgz",
+      "b".repeat(40),
+      "fedcba9876543210",
+    )).toBe(
+      "opencode-model-dispatch-0.1.0-bbbbbbbbbbbb-fedcba9876543210.tgz",
+    )
   })
 
   test("parses prepare, exact scratch install, and retained test commands", () => {
@@ -191,6 +221,99 @@ describe("manual release candidate support", () => {
     }
   })
 
+  test("refuses symlinked metadata without touching its external target", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "model-dispatch-manual-metadata-link-"))
+    const output = join(directory, "output")
+    const externalMetadata = join(directory, "external-metadata.json")
+    try {
+      await mkdir(output)
+      await writeFile(externalMetadata, "external-metadata")
+      await symlink(
+        externalMetadata,
+        join(output, "manual-candidate.json"),
+        "file",
+      )
+
+      await expect(invalidateManualCandidate(output)).rejects.toThrow(
+        "metadata must be a real regular file",
+      )
+      expect(await readFile(externalMetadata, "utf8")).toBe("external-metadata")
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  test("promotes staged evidence without following a retained tarball symlink", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "model-dispatch-manual-promote-"))
+    const output = join(directory, "output")
+    const staged = join(directory, "staged")
+    const externalTarball = join(directory, "external.tgz")
+    const tarballFilename = "candidate-deadbeefdead-0123456789abcdef.tgz"
+    const stagedTarball = join(staged, tarballFilename)
+    const stagedMetadata = join(staged, "manual-candidate.json")
+    try {
+      await Promise.all([mkdir(output), mkdir(staged)])
+      await Promise.all([
+        writeFile(externalTarball, "external-tarball"),
+        writeFile(stagedTarball, "candidate-tarball"),
+        writeFile(stagedMetadata, "{}"),
+      ])
+      await symlink(
+        externalTarball,
+        join(output, tarballFilename),
+        "file",
+      )
+
+      await expect(promoteManualCandidate({
+        outputRoot: output,
+        stagedTarball,
+        stagedMetadata,
+        tarballFilename,
+      })).rejects.toThrow("already exists and will not be overwritten")
+      expect(await readFile(externalTarball, "utf8")).toBe("external-tarball")
+      expect(await readFile(stagedTarball, "utf8")).toBe("candidate-tarball")
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  test("atomically promotes and can discard a staged candidate", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "model-dispatch-manual-atomic-"))
+    const output = join(directory, "output")
+    const staged = join(directory, "staged")
+    const tarballFilename = "candidate-cafebabecafe-fedcba9876543210.tgz"
+    const stagedTarball = join(staged, tarballFilename)
+    const stagedMetadata = join(staged, "manual-candidate.json")
+    try {
+      await Promise.all([mkdir(output), mkdir(staged)])
+      await Promise.all([
+        writeFile(stagedTarball, "candidate-tarball"),
+        writeFile(stagedMetadata, "candidate-metadata"),
+      ])
+
+      await expect(promoteManualCandidate({
+        outputRoot: output,
+        stagedTarball,
+        stagedMetadata,
+        tarballFilename,
+      })).resolves.toEqual({
+        tarballPath: join(output, tarballFilename),
+        metadataPath: join(output, "manual-candidate.json"),
+      })
+      expect(await readFile(join(output, tarballFilename), "utf8"))
+        .toBe("candidate-tarball")
+      expect(await readFile(join(output, "manual-candidate.json"), "utf8"))
+        .toBe("candidate-metadata")
+
+      await discardManualCandidatePromotion(output, tarballFilename)
+      expect(await Bun.file(join(output, tarballFilename)).exists()).toBe(false)
+      expect(await Bun.file(join(output, "manual-candidate.json")).exists())
+        .toBe(false)
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
   test("validates evidence metadata before using retained paths", () => {
     const valid = {
       schemaVersion: 1,
@@ -237,6 +360,12 @@ describe("manual release candidate support", () => {
     )
     expect(commandSource).not.toMatch(
       /import\s+\{[^}]*startLocalNpmRegistry[^}]*\}\s+from\s+"\.\/local-npm-registry"/s,
+    )
+    expect(commandSource.indexOf("const finalCommitSha")).toBeLessThan(
+      commandSource.indexOf("await promoteManualCandidate"),
+    )
+    expect(commandSource).toContain(
+      '[openCode, "plugin", packageSpec, "--pure"]',
     )
   })
 })
