@@ -87,34 +87,41 @@ const releasePackageBinFiles = [
 
 export async function releasePickerAssetFailures(
   assetRoot = defaultPickerAssetRoot,
+  assets: readonly ReleasePickerAsset[] = releasePickerAssets,
+  displayRoot?: string,
 ): Promise<string[]> {
   const failures: string[] = []
 
-  for (const asset of releasePickerAssets) {
+  for (const asset of assets) {
     const assetUrl = new URL(asset.name, assetRoot)
+    const displayPath = `${displayRoot ?? "bin"}/${asset.name}`
     let metadata: Awaited<ReturnType<typeof stat>>
     try {
       metadata = await stat(assetUrl)
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        failures.push(`published package must contain bin/${asset.name}`)
+        failures.push(
+          displayRoot
+            ? `${displayPath} must exist`
+            : `published package must contain ${displayPath}`,
+        )
         continue
       }
       throw error
     }
 
     if (!metadata.isFile()) {
-      failures.push(`bin/${asset.name} must be a regular file`)
+      failures.push(`${displayPath} must be a regular file`)
       continue
     }
     if (metadata.size < minimumExecutableBytes) {
       failures.push(
-        `bin/${asset.name} must be a nonempty native executable of at least ${minimumExecutableBytes} bytes`,
+        `${displayPath} must be a nonempty native executable of at least ${minimumExecutableBytes} bytes`,
       )
       continue
     }
     if (asset.executable && (metadata.mode & 0o111) === 0) {
-      failures.push(`bin/${asset.name} must have a Unix executable mode`)
+      failures.push(`${displayPath} must have a Unix executable mode`)
     }
 
     const handle = await open(assetUrl, "r")
@@ -124,7 +131,7 @@ export async function releasePickerAssetFailures(
       const architectureFailure = validateNativeArchitecture(asset.name, header.subarray(0, bytesRead))
       if (architectureFailure) {
         failures.push(
-          `bin/${asset.name} ${architectureFailure}; received ${header.subarray(0, Math.min(bytesRead, 16)).toString("hex")}`,
+          `${displayPath} ${architectureFailure}; received ${header.subarray(0, Math.min(bytesRead, 16)).toString("hex")}`,
         )
       }
     } finally {

@@ -321,16 +321,26 @@ describe("packaging and release assets", () => {
     expect(await Bun.file(new URL("picker/public/assets", root)).exists()).toBe(false)
   })
 
-  test("CI validates plugin tests, Node consumers, typecheck, picker build, and packaging checks", async () => {
+  test("CI validates every supported picker OS and architecture independently", async () => {
     const workflow = await readText(".github/workflows/ci.yml")
     const headlessWrapper = await readText("scripts/run-with-openbox.sh")
     const nodeConsumer = await readText("scripts/test-node-consumer.mjs")
+    const packageManifest = await readJson<PackageJson>("package.json")
+    const hostCheck = await readText("scripts/check-built-picker.ts")
     const nodeConsumerJob = workflow.slice(
       workflow.indexOf("\n  node-consumer:"),
       workflow.indexOf("\n  opencode-integration:"),
     )
+    const x64PickerJob = workflow.slice(
+      workflow.indexOf("\n  picker-build:"),
+      workflow.indexOf("\n  picker-build-arm64:"),
+    )
     const arm64PickerJob = workflow.slice(
       workflow.indexOf("\n  picker-build-arm64:"),
+      workflow.indexOf("\n  picker-build-nonlinux:"),
+    )
+    const nonLinuxPickerJob = workflow.slice(
+      workflow.indexOf("\n  picker-build-nonlinux:"),
       workflow.indexOf("\n  packaging:"),
     )
 
@@ -372,7 +382,12 @@ describe("packaging and release assets", () => {
     expect(workflow).toContain('WEBKIT_DISABLE_DMABUF_RENDERER: "1"')
     expect(workflow).toContain("xdotool")
     expect(workflow).toContain("runs-on: ubuntu-22.04")
+    expect(x64PickerJob).toContain("name: Picker build (Linux x64)")
+    expect(x64PickerJob).toContain("MODEL_DISPATCH_EXPECTED_PICKER_PLATFORM: linux")
+    expect(x64PickerJob).toContain("MODEL_DISPATCH_EXPECTED_PICKER_ARCH: x64")
+    expect(x64PickerJob).toContain("bun run check:picker-host")
     expect(arm64PickerJob).toContain("runs-on: ubuntu-22.04-arm")
+    expect(arm64PickerJob).toContain("name: Picker build (Linux ARM64)")
     expect(arm64PickerJob).toContain('test "$(uname -m)" = "aarch64"')
     expect(arm64PickerJob).toContain("process.stdout.write(process.arch)")
     expect(arm64PickerJob).toContain("picker-linux-arm64")
@@ -382,6 +397,35 @@ describe("packaging and release assets", () => {
     expect(arm64PickerJob).toContain("bun run test:package:native:opencode")
     expect(arm64PickerJob).toContain("bun run test:package:native:tui")
     expect(arm64PickerJob).not.toContain("continue-on-error")
+    expect(nonLinuxPickerJob).toContain("name: Picker build (${{ matrix.label }})")
+    expect(nonLinuxPickerJob).toContain("runs-on: ${{ matrix.runner }}")
+    expect(nonLinuxPickerJob).toContain("fail-fast: false")
+    expect(nonLinuxPickerJob).toContain("label: macOS ARM64")
+    expect(nonLinuxPickerJob).toContain("runner: macos-15")
+    expect(nonLinuxPickerJob).toContain("label: Windows x64")
+    expect(nonLinuxPickerJob).toContain("runner: windows-2025")
+    expect(nonLinuxPickerJob).toContain("label: Windows ARM64")
+    expect(nonLinuxPickerJob).toContain("runner: windows-11-arm")
+    expect(nonLinuxPickerJob).toContain("bun run check:picker-host")
+    expect(nonLinuxPickerJob).toContain(
+      "MODEL_DISPATCH_EXPECTED_PICKER_PLATFORM: ${{ matrix.platform }}",
+    )
+    expect(nonLinuxPickerJob).toContain(
+      "MODEL_DISPATCH_EXPECTED_PICKER_ARCH: ${{ matrix.arch }}",
+    )
+    expect(nonLinuxPickerJob).toContain(
+      "cargo test --manifest-path picker/src-tauri/Cargo.toml --locked",
+    )
+    expect(nonLinuxPickerJob).toContain("bun run test:picker-ready")
+    expect(nonLinuxPickerJob).not.toContain("continue-on-error")
+    expect(packageManifest.scripts?.["check:picker-host"]).toBe(
+      "bun run scripts/check-built-picker.ts",
+    )
+    expect(hostCheck).toContain("pickerTargetForNode(process.platform, process.arch)")
+    expect(hostCheck).toContain("target.rustTarget")
+    expect(hostCheck).toContain(
+      'releasePickerAssetFailures(assetRoot, [asset], "dist-picker")',
+    )
     expect(workflow).not.toContain("- run: bun install\n        working-directory: picker")
     expect(headlessWrapper).toContain("openbox --sm-disable")
     expect(headlessWrapper).toContain("_NET_SUPPORTING_WM_CHECK")

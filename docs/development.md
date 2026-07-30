@@ -220,11 +220,10 @@ bun run test:picker-ready
    OpenCode tests.
 5. Change the documented OpenCode engine range only after the complete
    integration path passes for that range.
-6. Update `docs/compatibility.md` when a plugin release line or supported range
-   changes.
+6. For a release, update every exact OpenCode version that passed the rolling
+   workflow to the new plugin version and append newly tested runtime versions.
 7. When an OpenCode minor becomes more than five lines older than the current
-   minor, archive its matrix row with the exact latest plugin version that
-   passed on it.
+   minor, keep all of its exact-version rows and mark them archived.
 
 Run:
 
@@ -263,8 +262,9 @@ bun run test:picker:rendered
 4. Add the platform to the README support table and document its runtime
    requirements.
 5. Add architecture, binary-format, ready-handshake, installed-package, and
-   release-matrix coverage. A platform is not supported until CI runs its
-   production artifact.
+   release-matrix coverage. Every supported OS/architecture pair must have its
+   own named CI check, and a platform is not supported until CI runs its
+   production artifact natively.
 
 Run:
 

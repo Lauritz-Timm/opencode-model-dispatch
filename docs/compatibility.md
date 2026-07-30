@@ -2,23 +2,26 @@
 
 This document records the strongest compatibility claim the project makes.
 `package.json` defines where the plugin can be installed and tried; the matrix
-below defines the combinations continuously tested or historically
-guaranteed.
+below is the historical record of exact version combinations that passed the
+real integration suite.
 
 ## Compatibility Matrix
 
-| OpenCode line | Runtime versions checked | Latest guaranteed plugin version | Status |
+| OpenCode version | Latest `opencode-model-dispatch` release tested | Verification | Status |
 | --- | --- | --- | --- |
-| `1.18.x` from `1.18.7` | Exact `1.18.7` and latest stable `1.18.x` | `0.1.0` | Rolling nightly |
+| `1.18.7` | `0.1.0` | Real dispatch and same-agent FIFO | Rolling minimum |
+| `1.18.9` | `0.1.0` | Real dispatch and same-agent FIFO | Rolling minor latest |
 
-There are no archived OpenCode lines yet. When a line leaves the rolling
-window, its row remains in this table, its status changes to **Archived**, and
-the latest plugin version that passed before removal is frozen in **Latest
-guaranteed plugin version**.
+Every exact OpenCode version that passes against a release is kept in this
+table. Rows are never removed merely because the rolling window moves. When a
+runtime version is no longer tested, its status changes to **Archived** and its
+latest tested plugin release stays unchanged. If that exact runtime is tested
+successfully against a later plugin release, update the existing row.
 
-Newer plugin versions may still work on an archived OpenCode line and users are
-welcome to try them. The guarantee for that OpenCode line stops at the version
-recorded in the matrix.
+Newer plugin versions may still work on an archived OpenCode version and users
+are welcome to try them. The guarantee for that OpenCode version stops at the
+plugin release recorded in the matrix. An OpenCode version absent from the
+table has no tested compatibility guarantee.
 
 ## Rolling Verification Window
 
@@ -63,26 +66,27 @@ The workflow is intentionally read-only and does not silently rewrite the
 compatibility promise. When a minor line becomes more than five lines older
 than the current line and leaves the nightly matrix:
 
-1. find the newest released plugin version whose CI passed on that OpenCode
-   line;
-2. keep or add the line in the compatibility matrix;
-3. record that exact plugin version as the latest guaranteed version;
-4. change its status to **Archived**;
-5. add the new rolling line and update the changelog in the next release.
+1. find every exact OpenCode version from that line already recorded in the
+   compatibility matrix;
+2. keep each row and its latest tested plugin release unchanged;
+3. change the rows' status to **Archived**;
+4. append newly tested exact OpenCode versions from the incoming rolling line;
+5. update the changelog in the next release.
 
 Example of an archived row:
 
-| OpenCode line | Runtime versions checked | Latest guaranteed plugin version | Status |
+| OpenCode version | Latest `opencode-model-dispatch` release tested | Verification | Status |
 | --- | --- | --- | --- |
-| `1.18.x` from `1.18.7` | Through `1.18.12` | `0.4.2` | Archived |
+| `1.18.12` | `0.4.2` | Real dispatch and same-agent FIFO | Archived |
 
 The exact archived numbers must come from a successful workflow run and a
 published plugin release; do not infer them from semver alone.
 
-For every plugin release, update the active rows to that exact version only
-after the rolling workflow has passed. The documentation contract test binds
-the active matrix to `package.json` so a release version bump cannot leave the
-guarantee stale.
+For every plugin release, update every exact runtime row that passed the rolling
+workflow to that plugin version. Append a row when the workflow tests a runtime
+version not previously recorded. Do this only after the workflow has passed.
+The documentation contract test binds the active matrix rows to `package.json`
+so a release version bump cannot leave the guarantee stale.
 
 ## What the Integration Proves
 

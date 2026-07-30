@@ -150,18 +150,29 @@ describe("OpenCode compatibility policy", () => {
       expect(action).toMatch(/@[0-9a-f]{40}$/)
     }
 
-    expect(documentation).toContain("| `1.18.x` from `1.18.7` |")
+    expect(documentation).toContain(
+      "| OpenCode version | Latest `opencode-model-dispatch` release tested |",
+    )
+    expect(documentation).toContain(
+      "| `1.18.7` | `0.1.0` | Real dispatch and same-agent FIFO |",
+    )
+    expect(documentation).toContain(
+      "| `1.18.9` | `0.1.0` | Real dispatch and same-agent FIFO |",
+    )
     expect(documentation).toMatch(
       /current\s+supported OpenCode minor line and the five\s+previous lines/,
     )
-    expect(documentation).toContain("Latest guaranteed plugin version")
+    expect(documentation).toContain("Rows are never removed")
     expect(documentation).toContain("Newer plugin versions may still work")
+    expect(documentation).toMatch(
+      /absent from the\s+table has no tested compatibility guarantee/,
+    )
     expect(documentation).toContain("Prereleases are excluded")
     expect(documentation).toContain("new major version is also excluded")
     expect(typeof packageManifest.version).toBe("string")
     const activeRows = documentation
       .split("\n")
-      .filter((line) => /\|\s*Rolling nightly\s*\|\s*$/.test(line))
+      .filter((line) => /\|\s*Rolling (?:minimum|minor latest)\s*\|\s*$/.test(line))
     expect(activeRows.length).toBeGreaterThan(0)
     for (const row of activeRows) {
       const columns = row
@@ -169,8 +180,13 @@ describe("OpenCode compatibility policy", () => {
         .slice(1, -1)
         .map((column) => column.trim())
       expect(columns).toHaveLength(4)
-      expect(columns[2]).toBe(`\`${packageManifest.version}\``)
-      expect(columns[3]).toBe("Rolling nightly")
+      expect(columns[1]).toBe(`\`${packageManifest.version}\``)
     }
+    expect(workflow).toContain(
+      "node -p \"require('./package.json').version\"",
+    )
+    expect(workflow).toContain(
+      "| OpenCode | opencode-model-dispatch | Target | Result |",
+    )
   })
 })

@@ -28,8 +28,18 @@ function workflowJob(
 }
 
 describe("release hardening", () => {
-  test("public-repository gate requires the Linux ARM64 picker check", () => {
-    expect(REQUIRED_CI_CHECK_CONTEXTS).toContain("Picker build (Linux ARM64)")
+  test("public-repository gate requires every supported picker target check", () => {
+    const pickerChecks = REQUIRED_CI_CHECK_CONTEXTS.filter((context) =>
+      context.startsWith("Picker build ("),
+    )
+
+    expect(pickerChecks).toEqual([
+      "Picker build (Linux x64)",
+      "Picker build (Linux ARM64)",
+      "Picker build (macOS ARM64)",
+      "Picker build (Windows x64)",
+      "Picker build (Windows ARM64)",
+    ])
   })
 
   test("platform signing secrets are isolated behind protected environments", async () => {

@@ -31,8 +31,9 @@ for the version guarantee and the
 [rolling nightly verification](docs/compatibility.md#rolling-verification-window)
 across the current supported OpenCode minor and its five predecessors,
 including across a reviewed major-version boundary. Newer plugin versions can
-be tried on older OpenCode lines, but only the latest version recorded for that
-line is guaranteed.
+be tried on older OpenCode versions, but only the latest
+`opencode-model-dispatch` release recorded for that exact version is
+guaranteed.
 
 OpenCode installs configured npm plugins with Bun. No Rust or Tauri toolchain is required,
 and no separate `npm install` is needed. The package contains the plugin and

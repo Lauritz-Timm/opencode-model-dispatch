@@ -54,6 +54,7 @@
     "dev:picker:tauri": "bun run scripts/dev-picker-tauri.ts",
     "preview:picker": "bun run dev:picker",
     "doctor:picker": "bun run scripts/check-picker-dev.ts",
+    "check:picker-host": "bun run scripts/check-built-picker.ts",
     "check:packaging": "bun run scripts/check-packaging.ts",
     "check:release-ci": "bun run scripts/check-release-ci.ts",
     "check:release-source": "bun run scripts/check-release-source.ts",

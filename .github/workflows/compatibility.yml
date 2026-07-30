@@ -88,5 +88,9 @@ jobs:
       - name: Record compatibility result
         if: always()
         run: |
-          echo "OpenCode \`${{ matrix.target.version }}\` (${{ matrix.target.line }}, ${{ matrix.target.role }}): **${{ job.status }}**" \
-            >> "$GITHUB_STEP_SUMMARY"
+          plugin_version="$(node -p "require('./package.json').version")"
+          {
+            echo "| OpenCode | opencode-model-dispatch | Target | Result |"
+            echo "| --- | --- | --- | --- |"
+            echo "| \`${{ matrix.target.version }}\` | \`$plugin_version\` | ${{ matrix.target.line }}, ${{ matrix.target.role }} | **${{ job.status }}** |"
+          } >> "$GITHUB_STEP_SUMMARY"

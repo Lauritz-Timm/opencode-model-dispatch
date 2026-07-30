@@ -15,8 +15,11 @@ export const REQUIRED_CI_CHECK_CONTEXTS = [
   "Node 18 package consumer",
   "Node 22 package consumer",
   "Real OpenCode integration",
-  "Picker build",
+  "Picker build (Linux x64)",
   "Picker build (Linux ARM64)",
+  "Picker build (macOS ARM64)",
+  "Picker build (Windows x64)",
+  "Picker build (Windows ARM64)",
   "Packaging checks",
 ] as const
 export const GITHUB_ACTIONS_APP_ID = 15368

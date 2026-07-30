@@ -9,10 +9,10 @@ picker binaries for every supported platform.
 - Update `CHANGELOG.md`.
 - Keep `package.json`, `picker/package.json`, and
   `picker/src-tauri/Cargo.toml` versions synchronized.
-- Update the active rows in `docs/compatibility.md` to the release version only
-  after the rolling OpenCode compatibility workflow has passed. Archive any
-  minor line that is now more than five lines behind with its last verified
-  plugin version.
+- After the rolling OpenCode compatibility workflow passes, update every exact
+  runtime version it tested in `docs/compatibility.md` to the release version
+  and append newly tested versions. Preserve older rows and archive versions
+  leaving the rolling window with their last verified plugin release.
 - Regenerate and verify third-party notices after dependency changes.
 - Confirm the required repository protections before storing or using signing
   or publishing credentials.
