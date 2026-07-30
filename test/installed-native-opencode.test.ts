@@ -5,6 +5,7 @@ import { join } from "node:path"
 
 import { releasePickerAssets } from "../scripts/check-packaging"
 import {
+  assertCandidatePickerAssets,
   assertExactPickerAssets,
   nativeE2EPreparationMode,
   terminateDetachedProcessGroup,
@@ -103,6 +104,62 @@ describe("installed native OpenCode integration support", () => {
       await expect(
         assertExactPickerAssets(releaseBin, installedBin),
       ).rejects.toThrow("release input bin/picker-linux-x64")
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  test("accepts only a byte-identical local picker or the complete release set", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "model-dispatch-local-candidate-"))
+    const releaseBin = join(directory, "release-bin")
+    const installedBin = join(directory, "installed-bin")
+    const localPicker = join(directory, "picker-linux-x64")
+    await Promise.all([
+      mkdir(releaseBin, { recursive: true }),
+      mkdir(installedBin, { recursive: true }),
+    ])
+
+    try {
+      await writeFile(localPicker, new Uint8Array([1, 2, 3, 4]))
+      await writeFile(
+        join(installedBin, "picker-linux-x64"),
+        new Uint8Array([1, 2, 3, 4]),
+      )
+      await expect(assertCandidatePickerAssets({
+        releaseBin,
+        localPicker,
+        installedBin,
+        localAssetName: "picker-linux-x64",
+      })).resolves.toBe("local-candidate")
+
+      await writeFile(
+        join(installedBin, "picker-windows-x64.exe"),
+        new Uint8Array([5, 6, 7]),
+      )
+      await expect(assertCandidatePickerAssets({
+        releaseBin,
+        localPicker,
+        installedBin,
+        localAssetName: "picker-linux-x64",
+      })).rejects.toThrow(
+        "either every release picker or exactly the local picker-linux-x64",
+      )
+
+      await rm(installedBin, { recursive: true, force: true })
+      await mkdir(installedBin)
+      for (const [index, asset] of releasePickerAssets.entries()) {
+        const bytes = new Uint8Array([index, 8, 9])
+        await Promise.all([
+          writeFile(join(releaseBin, asset.name), bytes),
+          writeFile(join(installedBin, asset.name), bytes),
+        ])
+      }
+      await expect(assertCandidatePickerAssets({
+        releaseBin,
+        localPicker,
+        installedBin,
+        localAssetName: "picker-linux-x64",
+      })).resolves.toBe("complete-release")
     } finally {
       await rm(directory, { recursive: true, force: true })
     }

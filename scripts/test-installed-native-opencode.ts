@@ -5,7 +5,7 @@ import { basename, isAbsolute, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import {
-  assertExactPickerAssets,
+  assertCandidatePickerAssets,
   terminateDetachedProcessGroup,
 } from "./installed-native-opencode-support"
 
@@ -103,10 +103,12 @@ try {
     access(installedPicker, constants.X_OK),
   ])
   if (providedTarball) {
-    await assertExactPickerAssets(
-      join(root, "bin"),
-      join(installedPackage, "bin"),
-    )
+    await assertCandidatePickerAssets({
+      releaseBin: join(root, "bin"),
+      localPicker: join(root, "dist-picker", assetName),
+      installedBin: join(installedPackage, "bin"),
+      localAssetName: assetName,
+    })
   } else {
     const [sourceBytes, installedBytes] = await Promise.all([
       readFile(nativeAsset!),

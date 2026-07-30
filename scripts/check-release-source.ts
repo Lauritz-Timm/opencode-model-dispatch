@@ -8,6 +8,7 @@ const root = fileURLToPath(new URL("../", import.meta.url))
 
 export const REQUIRED_TRACKED_RELEASE_PATHS = [
   ".gitattributes",
+  ".gitignore",
   ".npmignore",
   ".github/ISSUE_TEMPLATE/bug_report.md",
   ".github/ISSUE_TEMPLATE/config.yml",
@@ -43,6 +44,8 @@ export const REQUIRED_TRACKED_RELEASE_PATHS = [
   "scripts/test-apple-notary-log-validator.sh",
   "scripts/validate-apple-notary-log.swift",
   "scripts/generate-third-party-notices.ts",
+  "scripts/manual-candidate.ts",
+  "scripts/manual-candidate-support.ts",
   "scripts/resolve-opencode-compatibility.ts",
   "third-party/RUST_THIRD_PARTY_LICENSES.md",
   "third-party/about.hbs",

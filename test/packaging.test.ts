@@ -565,7 +565,7 @@ describe("packaging and release assets", () => {
     expect(workflow).toContain(
       "rustup toolchain install 1.97.1 --profile minimal --no-self-update",
     )
-    expect(workflow.match(/id-token: write/g)).toHaveLength(3)
+    expect(workflow.match(/id-token: write/g)).toHaveLength(4)
     expect(stageJob).toContain("id-token: write")
     expect(stageJob).toContain("attestations: write")
     expect(stageJob).toContain("artifact-metadata: write")
@@ -750,16 +750,49 @@ describe("packaging and release assets", () => {
     expect(windowsSigningJob).toContain('"WindowsPowerShell"')
     expect(windowsSigningJob).toContain('"powershell.exe"')
     expect(windowsSigningJob).toContain("$signtoolPath")
-    expect(windowsSigningJob).toContain("secrets.WINDOWS_CERTIFICATE")
+    expect(windowsSigningJob).toContain("id-token: write")
+    expect(windowsSigningJob).toContain(
+      "azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43",
+    )
+    expect(windowsSigningJob).toContain(
+      "azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82",
+    )
+    expect(windowsSigningJob).toContain(
+      "vars.AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME",
+    )
+    expect(windowsSigningJob).toContain(
+      "vars.EXPECTED_WINDOWS_SIGNER_SUBJECT",
+    )
+    expect(windowsSigningJob).toContain(
+      "AZURE_ARTIFACT_SIGNING_ENDPOINT must be a root https://*.codesigning.azure.net endpoint",
+    )
+    expect(windowsSigningJob).toContain("cache-dependencies: false")
+    expect(windowsSigningJob).toContain("append-signature: false")
+    expect(windowsSigningJob).toContain(
+      "[System.Management.Automation.SignatureStatus]::NotSigned",
+    )
+    expect(windowsSigningJob).toContain(
+      "Get-AuthenticodeSignature -LiteralPath $picker",
+    )
+    expect(windowsSigningJob).toContain(
+      "Windows picker signature is missing its RFC 3161 timestamp",
+    )
+    expect(windowsSigningJob).toContain(
+      "Windows picker signer subject does not match EXPECTED_WINDOWS_SIGNER_SUBJECT",
+    )
+    expect(windowsSigningJob).not.toContain("secrets.WINDOWS_CERTIFICATE")
     expect(windowsSigningJob).not.toContain("secrets.APPLE_CERTIFICATE")
-    expect(windowsSigningJob.match(/secrets\.WINDOWS_[A-Z_]+/g)).toHaveLength(2)
+    expect(windowsSigningJob).not.toMatch(/secrets\.WINDOWS_[A-Z_]+/)
+    const macosActions = [...macosSigningJob.matchAll(/uses:\s+([^\s]+)/g)]
+      .map((match) => match[1])
+    expect(macosActions).toHaveLength(2)
+    const windowsActions = [...windowsSigningJob.matchAll(/uses:\s+([^\s]+)/g)]
+      .map((match) => match[1])
+    expect(windowsActions).toHaveLength(4)
+    for (const action of [...macosActions, ...windowsActions]) {
+      expect(action).toMatch(/@[0-9a-f]{40}$/)
+    }
     for (const signingJob of [macosSigningJob, windowsSigningJob]) {
-      const actions = [...signingJob.matchAll(/uses:\s+([^\s]+)/g)]
-        .map((match) => match[1])
-      expect(actions).toHaveLength(2)
-      for (const action of actions) {
-        expect(action).toMatch(/@[0-9a-f]{40}$/)
-      }
       expect(signingJob).not.toContain("actions/checkout@")
       expect(signingJob).not.toContain("oven-sh/setup-bun")
       expect(signingJob).not.toContain("actions/setup-node")
@@ -810,10 +843,28 @@ describe("packaging and release assets", () => {
     expect(macosSigningJob.indexOf("Remove Apple signing credentials")).toBeLessThan(
       macosSigningJob.indexOf("Retain canonical signed macOS picker"),
     )
-    expect(windowsSigningJob.indexOf("Sign and verify Windows picker")).toBeLessThan(
-      windowsSigningJob.indexOf("Remove Windows signing credentials"),
+    expect(
+      windowsSigningJob.indexOf(
+        "Validate Windows signing configuration and unsigned picker",
+      ),
+    ).toBeLessThan(
+      windowsSigningJob.indexOf("Authenticate to Azure with GitHub OIDC"),
     )
-    expect(windowsSigningJob.indexOf("Remove Windows signing credentials")).toBeLessThan(
+    expect(
+      windowsSigningJob.indexOf("Authenticate to Azure with GitHub OIDC"),
+    ).toBeLessThan(
+      windowsSigningJob.indexOf(
+        "Sign Windows picker with Azure Artifact Signing",
+      ),
+    )
+    expect(
+      windowsSigningJob.indexOf(
+        "Sign Windows picker with Azure Artifact Signing",
+      ),
+    ).toBeLessThan(
+      windowsSigningJob.indexOf("Verify signed Windows picker"),
+    )
+    expect(windowsSigningJob.indexOf("Verify signed Windows picker")).toBeLessThan(
       windowsSigningJob.indexOf("Retain canonical signed Windows picker"),
     )
     expect(workflow).toContain("gh release create")
@@ -844,6 +895,12 @@ describe("packaging and release assets", () => {
     expect(releasing).toContain("mandatory local pre-tag gate")
     expect(releasing).toMatch(/contains no\s+repository-administration token/)
     expect(releasing).toContain("allowed action `npm publish`")
+    expect(releasing).toContain("App Store Connect **Team API key**")
+    expect(releasing).toContain("individual API key cannot")
+    expect(releasing).toContain("Azure Artifact Signing")
+    expect(releasing).toContain("immutable OIDC subject")
+    expect(releasing).toContain("EXPECTED_WINDOWS_SIGNER_SUBJECT")
+    expect(releasing).not.toContain("`WINDOWS_CERTIFICATE`")
     expect(`${readme}\n${releasing}`).not.toContain("REPOSITORY_RULESET_AUDIT_TOKEN")
   })
 })

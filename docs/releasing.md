@@ -43,6 +43,48 @@ Complete `docs/manual-integration-gate.md` from the exact intended source
 commit. Record its full `git rev-parse HEAD`, the tested tarball, and the TUI
 and Desktop results.
 
+Prepare one retained local-host candidate artifact before opening either
+surface:
+
+```sh
+bun run release:manual-candidate
+```
+
+The command fails unless the tracked and untracked source is clean and
+`HEAD == origin/main`. It builds both plugin and local picker, stages only that
+fresh host picker, packs the result without lifecycle scripts, and writes:
+
+- `.manual-release/opencode-model-dispatch-<version>.tgz`;
+- `.manual-release/manual-candidate.json`.
+
+The metadata is commit-bound and records the tarball SHA-512 SRI and picker
+SHA-256. `.manual-release/` is intentionally ignored by Git, but do not delete,
+rebuild, repack, or replace it until both live surfaces have passed.
+
+On Linux, exercise the retained bytes through both automated real-OpenCode
+paths:
+
+```sh
+bun run release:manual-candidate:test
+bun run release:manual-candidate:test:tui
+```
+
+Then create one empty temporary project and install that exact tarball for the
+human TUI and Desktop checks:
+
+```sh
+manual_scratch="$(mktemp -d -t opencode-model-dispatch-release-XXXXXX)"
+bun run release:manual-candidate:install -- --project "$manual_scratch"
+```
+
+The installer exposes only the retained candidate and its locked local
+dependency graph through a temporary loopback registry. It runs
+`opencode plugin opencode-model-dispatch@<version>` in the empty project,
+confirms the tarball was fetched, and removes the registry override before the
+live checks. Start the TUI in `$manual_scratch`, then fully quit it and open the
+same directory in OpenCode Desktop. Copy the five printed evidence values into
+the gate and sanitize the project path as documented there.
+
 Commit only the completed evidence file on a branch based on that source
 commit. Merge it through protected `main`, confirm that the merged commit
 differs from the tested source only by the evidence file, and wait for CI on
@@ -128,7 +170,7 @@ the first release uses a short-lived granular access token:
 Subsequent releases use GitHub OIDC trusted publishing and require no npm
 repository secret.
 
-## Signing Secrets
+## Signing Configuration
 
 Store the Apple credentials only as environment secrets in the protected
 `release-signing-macos` GitHub environment:
@@ -141,16 +183,81 @@ Store the Apple credentials only as environment secrets in the protected
 - `APPLE_API_KEY_ID`
 - `APPLE_API_ISSUER_ID`
 
-Store the Windows credentials only as environment secrets in the protected
+`APPLE_API_PRIVATE_KEY`, `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER_ID` must
+belong to an App Store Connect **Team API key**. An individual API key cannot
+be used with `notarytool`. The Account Holder must first request App Store
+Connect API access, and an Account Holder or Admin must create the team key.
+Keep the downloaded P8 private key as carefully as the Developer ID P12. See
+Apple's [API key documentation][apple-api-keys] and
+[team-key setup guide][apple-team-keys].
+
+Windows signing uses [Azure Artifact Signing][azure-signing] with GitHub OIDC.
+The private signing key remains in Microsoft's HSM-backed service; do not add a
+PFX, Azure client secret, or other long-lived Windows signing secret to
+GitHub. The cloud signing job receives only the release executable. Runtime
+model selection, prompts, and OpenCode sessions remain local.
+
+Before creating the Azure resources, confirm the current eligibility rules. As
+of July 2026, Public Trust accepts organizations in the EU, including a
+qualifying Danish legal organization, but individual developers are accepted
+only in the United States and Canada. It also requires a paid Azure
+subscription whose billing identity matches the certificate subject. Do not
+push a release tag until identity validation is complete and the certificate
+profile is active. See Microsoft's
+[eligibility quickstart][azure-quickstart] and
+[current pricing documentation][azure-pricing]. If the publisher is not
+eligible, select another HSM-backed public-trust provider in a reviewed
+workflow change; never fall back to unsigned Windows binaries.
+
+Create an Entra application/service principal and give it only the
+`Artifact Signing Certificate Profile Signer` role at the certificate-profile
+scope. Add a federated credential with:
+
+- issuer `https://token.actions.githubusercontent.com`;
+- audience `api://AzureADTokenExchange`;
+- the exact environment-bound repository subject ending in
+  `:environment:release-signing-windows`.
+
+Enable GitHub's [immutable OIDC subject][github-immutable-oidc] before creating
+that federated credential, then read the repository setting back and use the
+exact returned `sub_claim_prefix`. For this repository, the expected immutable
+subject is:
+
+```text
+repo:Lauritz-Timm@269186225/opencode-model-dispatch@1290427988:environment:release-signing-windows
+```
+
+Do not assume the displayed value: verify it after opt-in before copying it to
+Entra. Store these identifiers as environment variables in the protected
 `release-signing-windows` GitHub environment:
 
-- `WINDOWS_CERTIFICATE` (base64 PFX)
-- `WINDOWS_CERTIFICATE_PASSWORD`
+- `AZURE_CLIENT_ID`
+- `AZURE_TENANT_ID`
+- `AZURE_SUBSCRIPTION_ID`
+- `AZURE_ARTIFACT_SIGNING_ENDPOINT`
+- `AZURE_ARTIFACT_SIGNING_ACCOUNT_NAME`
+- `AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME`
+- `EXPECTED_WINDOWS_SIGNER_SUBJECT`
+
+`AZURE_ARTIFACT_SIGNING_ENDPOINT` must be the root HTTPS endpoint ending in
+`.codesigning.azure.net`. Set `EXPECTED_WINDOWS_SIGNER_SUBJECT` to the exact
+X.500 subject emitted by the active certificate profile. The workflow rejects
+an already-signed input, signs both x64 and ARM64 files from a supported x64
+Windows runner, and then verifies PE architecture, public trust, the exact
+subject, and the RFC 3161 timestamp. Azure certificate thumbprints rotate, so
+do not pin a thumbprint.
 
 Require maintainer approval on both signing environments. Do not also define
-these credentials as repository-level secrets.
+the Apple credentials or Windows configuration at repository level.
 
 `NPM_BOOTSTRAP_TOKEN` exists for the first publish only.
+
+[apple-api-keys]: https://developer.apple.com/documentation/appstoreconnectapi/creating-api-keys-for-app-store-connect-api
+[apple-team-keys]: https://developer.apple.com/help/app-store-connect/get-started/app-store-connect-api
+[azure-signing]: https://learn.microsoft.com/en-us/azure/artifact-signing/overview
+[azure-quickstart]: https://learn.microsoft.com/en-us/azure/artifact-signing/quickstart
+[azure-pricing]: https://learn.microsoft.com/en-us/azure/artifact-signing/how-to-change-sku
+[github-immutable-oidc]: https://docs.github.com/en/actions/reference/security/oidc#immutable-subject-claims
 
 ## Recovery
 

@@ -15,7 +15,7 @@ describe("manual OpenCode integration gate", () => {
 
     for (const required of [
       "Local OpenCode starts with the plugin installed in a scratch project",
-      "`bun run test:package:native:opencode` installs an npm tarball",
+      "`bun run release:manual-candidate:test` installs the retained npm tarball",
       "First-run setup opens at plugin load",
       "Dispatch remains disabled if setup is cancelled and snoozed",
       "Enabling dispatch works",
