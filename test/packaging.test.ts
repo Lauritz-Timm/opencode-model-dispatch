@@ -10,6 +10,10 @@ import {
   releasePickerAssetFailures,
   releasePickerAssets,
 } from "../scripts/check-packaging"
+import {
+  pickerReadySmokeAttempts,
+  shouldRetryPickerReadySmoke,
+} from "../scripts/smoke-picker-ready"
 import { PICKER_TARGETS, pickerTargetForAsset } from "../src/picker-targets"
 
 const root = new URL("../", import.meta.url)
@@ -439,6 +443,39 @@ describe("packaging and release assets", () => {
     expect(headlessWrapper).toContain("_NET_SUPPORTING_WM_CHECK")
     expect(headlessWrapper).toContain('kill -0 "$openbox_pid"')
     expect(headlessWrapper).toContain('"$@"')
+  })
+
+  test("Windows ready smoke retries only a startup timeout once", async () => {
+    const readySmoke = await readText("scripts/smoke-picker-ready.ts")
+
+    expect(pickerReadySmokeAttempts("win32")).toBe(2)
+    expect(pickerReadySmokeAttempts("linux")).toBe(1)
+    expect(pickerReadySmokeAttempts("darwin")).toBe(1)
+    expect(
+      shouldRetryPickerReadySmoke(
+        "win32",
+        1,
+        "Picker startup timeout after 60000ms",
+      ),
+    ).toBe(true)
+    expect(
+      shouldRetryPickerReadySmoke(
+        "win32",
+        2,
+        "Picker startup timeout after 60000ms",
+      ),
+    ).toBe(false)
+    expect(
+      shouldRetryPickerReadySmoke("win32", 1, "Picker lost stdio before ready"),
+    ).toBe(false)
+    expect(
+      shouldRetryPickerReadySmoke(
+        "linux",
+        1,
+        "Picker startup timeout after 60000ms",
+      ),
+    ).toBe(false)
+    expect(readySmoke).toContain("retrying once")
   })
 
   test("exact-tarball smoke launches the installed npm wrapper before the native picker", async () => {
