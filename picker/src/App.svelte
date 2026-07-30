@@ -28,6 +28,7 @@
     type PickerSetupInput,
   } from "./runtime-request"
   import { createTauriPickerRuntimeAdapter, type PickerRuntimeAdapter } from "./runtime-rpc"
+  import CompactSelect from "./CompactSelect.svelte"
   import EffortSelect from "./EffortSelect.svelte"
   import ModelSelect from "./ModelSelect.svelte"
   import NumberRow from "./NumberRow.svelte"
@@ -38,6 +39,10 @@
   const maxPickerTimeoutMs = 600_000
   const systemThemeMedia = "(prefers-color-scheme: light)"
   const decisionFailureMessage = "The picker could not complete the action. Please try again."
+  const scopeOptions = [
+    { value: "global", label: "Global" },
+    { value: "project", label: "This project" },
+  ]
   const params = typeof window === "undefined" ? new URLSearchParams() : new URLSearchParams(window.location.search)
   let runtimeRequest = getPickerRuntimeRequest()
   const isPreviewWindow = isDevPreview && params.get("preview") === "1"
@@ -272,6 +277,12 @@
     }
   }
 
+  function setSetupScope(value: string) {
+    if (value !== "global" && value !== "project") return
+    setupScope = value
+    handleScopeChange()
+  }
+
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === "Escape") {
       event.preventDefault()
@@ -487,16 +498,20 @@
           <h1 id="settings-title" class="settings-title">Model Dispatch Settings</h1>
 
           <div class="settings-panel">
-            <label class="scope-row">
+            <div class="scope-row">
               <span class="scope-copy">
                 <strong>Configuration scope</strong>
                 <small>Privacy logging stays global; dispatch settings can apply globally or only to this project.</small>
               </span>
-              <select bind:value={setupScope} aria-label="Configuration scope" on:change={handleScopeChange}>
-                <option value="global">Global</option>
-                <option value="project">This project</option>
-              </select>
-            </label>
+              <div class="scope-control">
+                <CompactSelect
+                  value={setupScope}
+                  options={scopeOptions}
+                  ariaLabel="Configuration scope"
+                  onChange={setSetupScope}
+                />
+              </div>
+            </div>
             <ToggleRow
               label="Enable model dispatch"
               description="Pause task calls and choose the model before subagents start."
@@ -868,7 +883,7 @@
   }
 
   .settings-panel {
-    overflow: hidden;
+    overflow: visible;
     border-radius: 8px;
     padding-inline: 14px;
     background: var(--v2-background-bg-base);
@@ -904,14 +919,18 @@
     line-height: 1.25;
   }
 
-  .scope-row select {
-    min-height: 32px;
-    border: 0.5px solid var(--v2-border-border-muted);
-    border-radius: 6px;
-    padding: 6px 8px;
-    background: var(--v2-background-bg-base);
-    color: var(--v2-text-text-base);
-    font: inherit;
+  .scope-control {
+    width: 136px;
+    min-width: 136px;
+  }
+
+  .scope-control :global(.compact-select) {
+    height: 32px;
+    font-size: 12px;
+  }
+
+  .scope-control :global(.compact-trigger),
+  .scope-control :global(.compact-option) {
     font-size: 12px;
   }
 

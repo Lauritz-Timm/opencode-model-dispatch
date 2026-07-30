@@ -15,6 +15,8 @@ All notable changes to this project will be documented here.
   the variants advertised by each model.
 - Add signed/notarized release gates, dependency auditing, third-party notices,
   and public-repository security metadata.
+- Add a nightly OpenCode compatibility matrix covering the current minor and
+  five prior lines, with archived last-tested guarantees.
 - Match the active local OpenCode theme, acknowledge rendered native startup,
   and keep failed picker decisions retryable.
 - Keep the child-session persistence transport on loopback even across

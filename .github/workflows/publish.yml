@@ -276,6 +276,7 @@ jobs:
     name: Sign and notarize macOS picker
     needs: picker-unsigned
     runs-on: macos-15
+    environment: release-signing-macos
     permissions:
       actions: read
     steps:
@@ -387,6 +388,7 @@ jobs:
     name: Sign Windows picker ${{ matrix.arch }}
     needs: picker-unsigned
     runs-on: windows-2025
+    environment: release-signing-windows
     permissions:
       actions: read
     strategy:

@@ -1,5 +1,5 @@
 interface FrameFixture {
-  name: "normal" | "narrow"
+  name: "normal" | "narrow" | "settings"
   width: number
   height: number
   frame: HTMLIFrameElement
@@ -35,21 +35,28 @@ void run()
 async function run(): Promise<Pick<RenderedUiResult, "measurements">> {
   await reportProgress("probe-loaded")
   const fixtures = [
-    createFrame("normal", 680, 500),
-    createFrame("narrow", 480, 700),
+    createFrame("normal", 680, 500, "models"),
+    createFrame("narrow", 480, 700, "models"),
+    createFrame("settings", 800, 560, "settings"),
   ] as const
 
   await Promise.all(fixtures.map(waitForFrame))
   await reportProgress("frames-loaded")
-  await Promise.all(
-    fixtures.map(({ frame }) =>
+  await Promise.all([
+    ...fixtures.slice(0, 2).map(({ frame }) =>
       waitFor(() => frame.contentDocument?.querySelectorAll(".model-row").length === 4),
     ),
-  )
-  await reportProgress("picker-rows-rendered")
+    waitFor(() => Boolean(
+      fixtures[2].frame.contentDocument?.querySelector(
+        '.scope-control .compact-trigger[aria-label^="Configuration scope:"]',
+      ),
+    )),
+  ])
+  await reportProgress("picker-views-rendered")
 
   const normal = inspectFrame(fixtures[0])
   const narrow = inspectFrame(fixtures[1])
+  const settings = inspectFrame(fixtures[2])
   await reportProgress("frames-inspected")
   await assertTheme(normal)
   await reportProgress("theme-asserted")
@@ -57,6 +64,8 @@ async function run(): Promise<Pick<RenderedUiResult, "measurements">> {
   await reportProgress("normal-layout-and-keyboard-asserted")
   const narrowMeasurements = assertNarrowLayout(narrow)
   await reportProgress("narrow-layout-asserted")
+  await assertSettingsSelect(settings)
+  await reportProgress("settings-select-asserted")
 
   return {
     measurements: {
@@ -70,6 +79,7 @@ function createFrame(
   name: FrameFixture["name"],
   width: number,
   height: number,
+  view: "models" | "settings",
 ): FrameFixture {
   const frame = document.createElement("iframe")
   frame.dataset.fixture = name
@@ -78,7 +88,7 @@ function createFrame(
   frame.height = String(height)
   frame.style.cssText = `display:block;width:${width}px;height:${height}px;border:0`
   frame.src =
-    "/?preview=1&view=models&themeID=nightowl&colorScheme=dark"
+    `/?preview=1&view=${view}&themeID=nightowl&colorScheme=dark`
   required(document, "#rendered-test-root").append(frame)
   return { name, width, height, frame }
 }
@@ -339,17 +349,170 @@ async function assertNormalLayoutAndKeyboard(
     "model selection restores focus to its trigger",
   )
 
-  const effortSelect = required<HTMLSelectElement>(
+  const effortTrigger = required<HTMLButtonElement>(
     controls,
-    ".effort-select select",
+    ".effort-select .compact-trigger",
   )
-  check(!effortSelect.disabled, "selected model enables its effort dropdown")
-  check(effortSelect.value === "", "effort remains Auto by default")
+  check(!effortTrigger.disabled, "selected model enables its effort dropdown")
   check(
-    Array.from(effortSelect.options).map((option) => option.text).join("|") ===
-      "Auto|Minimal|Standard|Xhigh",
-    "effort dropdown renders Auto before provider-advertised variants",
+    effortTrigger.textContent?.includes("Auto"),
+    "effort remains Auto by default",
   )
+  check(
+    effortTrigger.getAttribute("aria-haspopup") === "listbox"
+      && effortTrigger.getAttribute("aria-expanded") === "false",
+    "effort trigger exposes its closed listbox state",
+  )
+
+  const pickerWindow = required<HTMLElement>(
+    fixture.document,
+    ".picker-window",
+  )
+  const pickerWindowStyle = pickerWindow.getAttribute("style")
+  pickerWindow.style.height = "250px"
+  pickerWindow.style.flex = "0 0 250px"
+  pickerWindow.style.boxSizing = "border-box"
+  await waitFor(() => pickerWindow.getBoundingClientRect().height <= 251)
+
+  effortTrigger.focus()
+  effortTrigger.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "ArrowDown",
+      bubbles: true,
+      cancelable: true,
+    }),
+  )
+  await waitFor(() => Boolean(effort.querySelector(".compact-popover")))
+  const effortPopover = required<HTMLElement>(effort, ".compact-popover")
+  const effortOptions = Array.from(
+    effortPopover.querySelectorAll<HTMLElement>('[role="option"]'),
+  )
+  check(
+    effortTrigger.getAttribute("aria-expanded") === "true"
+      && effortTrigger.getAttribute("aria-controls") === effortPopover.id,
+    "effort trigger links to its open listbox",
+  )
+  check(
+    effortOptions.length === 17
+      && optionLabel(effortOptions[0]) === "Auto"
+      && optionLabel(effortOptions.at(-1)) === "Adaptive",
+    "effort dropdown renders Auto plus the maximum 16 provider-advertised variants",
+  )
+  check(
+    effortOptions[0]?.getAttribute("aria-selected") === "true"
+      && fixture.document.activeElement === effortOptions[0],
+    "effort listbox marks and focuses its current option",
+  )
+  const effortPopoverRect = effortPopover.getBoundingClientRect()
+  const pickerWindowRect = pickerWindow.getBoundingClientRect()
+  check(
+    effortPopover.scrollHeight > effortPopover.clientHeight
+      && effortPopoverRect.top >= pickerWindowRect.top + 3
+      && effortPopoverRect.bottom <= pickerWindowRect.bottom - 3,
+    "maximum-size effort dropdown is clipping-ancestor-bounded and vertically scrollable",
+  )
+
+  const effortThemeProbe = fixture.document.createElement("span")
+  effortThemeProbe.style.cssText = [
+    "position:fixed",
+    "left:-10000px",
+    "background:var(--v2-background-bg-layer-01)",
+    "color:var(--v2-text-text-base)",
+  ].join(";")
+  required<HTMLElement>(fixture.document, ".shell").append(effortThemeProbe)
+  const effortProbeStyle = fixture.window.getComputedStyle(effortThemeProbe)
+  const effortPopoverStyle = fixture.window.getComputedStyle(effortPopover)
+  const firstEffortOptionStyle = fixture.window.getComputedStyle(effortOptions[0]!)
+  check(
+    effortPopoverStyle.backgroundColor === effortProbeStyle.backgroundColor,
+    "effort popup background computes from the active OpenCode theme",
+  )
+  check(
+    firstEffortOptionStyle.color === effortProbeStyle.color,
+    "effort option text computes from the active OpenCode theme",
+  )
+  effortThemeProbe.style.background = "var(--v2-background-bg-layer-03)"
+  check(
+    firstEffortOptionStyle.backgroundColor
+      === fixture.window.getComputedStyle(effortThemeProbe).backgroundColor,
+    "selected effort option background computes from the active OpenCode theme",
+  )
+  effortThemeProbe.remove()
+
+  effortOptions[0]?.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "x",
+      bubbles: true,
+      cancelable: true,
+    }),
+  )
+  const xhighOption = effortOptions.find((option) => optionLabel(option) === "Xhigh")
+  await waitFor(() => fixture.document.activeElement === xhighOption)
+  check(
+    fixture.document.activeElement === xhighOption,
+    "printable-character typeahead focuses the matching effort",
+  )
+
+  xhighOption?.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "End",
+      bubbles: true,
+      cancelable: true,
+    }),
+  )
+  await waitFor(() => fixture.document.activeElement === effortOptions.at(-1))
+  const finalEffortRect = effortOptions.at(-1)?.getBoundingClientRect()
+  const scrolledPopoverRect = effortPopover.getBoundingClientRect()
+  check(
+    effortPopover.scrollTop > 0
+      && Boolean(finalEffortRect)
+      && finalEffortRect!.top >= scrolledPopoverRect.top
+      && finalEffortRect!.bottom <= scrolledPopoverRect.bottom,
+    "End scrolls the maximum-size effort list to keep its active option visible",
+  )
+  effortOptions.at(-1)?.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "Enter",
+      bubbles: true,
+      cancelable: true,
+    }),
+  )
+  await waitFor(() => !effort.querySelector(".compact-popover"))
+  check(
+    effortTrigger.textContent?.includes("Adaptive"),
+    "keyboard selection commits the provider-advertised effort",
+  )
+  check(
+    fixture.document.activeElement === effortTrigger,
+    "effort selection restores focus to its trigger",
+  )
+
+  effortTrigger.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "ArrowDown",
+      bubbles: true,
+      cancelable: true,
+    }),
+  )
+  await waitFor(() => Boolean(effort.querySelector(".compact-popover")))
+  const reopenedEffortOption = required<HTMLElement>(
+    effort,
+    '.compact-option[aria-selected="true"]',
+  )
+  reopenedEffortOption.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    }),
+  )
+  await waitFor(() => !effort.querySelector(".compact-popover"))
+  check(
+    fixture.document.activeElement === effortTrigger,
+    "Escape closes the effort listbox and restores trigger focus",
+  )
+  if (pickerWindowStyle === null) pickerWindow.removeAttribute("style")
+  else pickerWindow.setAttribute("style", pickerWindowStyle)
 
   trigger.dispatchEvent(
     new KeyboardEvent("keydown", {
@@ -423,6 +586,155 @@ async function assertNormalLayoutAndKeyboard(
     normalModelWidth: rounded(modelRect.width),
     normalPopoverWidth: rounded(popoverRect.width),
   }
+}
+
+async function assertSettingsSelect(
+  fixture: ReturnType<typeof inspectFrame>,
+): Promise<void> {
+  const scope = required<HTMLElement>(fixture.document, ".scope-control")
+  const trigger = required<HTMLButtonElement>(scope, ".compact-trigger")
+  check(
+    fixture.document.querySelectorAll("select").length === 0,
+    "settings renders no native select controls",
+  )
+  check(
+    trigger.textContent?.includes("This project"),
+    "configuration scope starts from the project fixture value",
+  )
+  check(
+    trigger.getAttribute("aria-haspopup") === "listbox"
+      && trigger.getAttribute("aria-expanded") === "false",
+    "configuration scope trigger exposes its closed listbox state",
+  )
+
+  trigger.focus()
+  trigger.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "ArrowDown",
+      bubbles: true,
+      cancelable: true,
+    }),
+  )
+  await waitFor(() => Boolean(scope.querySelector(".compact-popover")))
+  const popover = required<HTMLElement>(scope, ".compact-popover")
+  const options = Array.from(
+    popover.querySelectorAll<HTMLElement>('[role="option"]'),
+  )
+  check(
+    trigger.getAttribute("aria-expanded") === "true"
+      && trigger.getAttribute("aria-controls") === popover.id
+      && fixture.document.querySelectorAll(`#${popover.id}`).length === 1,
+    "configuration scope trigger links to one unique open listbox",
+  )
+  check(
+    options.map(optionLabel).join("|") === "Global|This project",
+    "configuration scope renders its two supported values",
+  )
+  check(
+    options[1]?.getAttribute("aria-selected") === "true"
+      && fixture.document.activeElement === options[1],
+    "configuration scope marks and focuses its current option",
+  )
+
+  const themeProbe = fixture.document.createElement("span")
+  themeProbe.style.cssText = [
+    "position:fixed",
+    "left:-10000px",
+    "background:var(--v2-background-bg-layer-01)",
+    "color:var(--v2-text-text-base)",
+  ].join(";")
+  required<HTMLElement>(fixture.document, ".shell").append(themeProbe)
+  const probeStyle = fixture.window.getComputedStyle(themeProbe)
+  const popoverStyle = fixture.window.getComputedStyle(popover)
+  const selectedStyle = fixture.window.getComputedStyle(options[1]!)
+  check(
+    popoverStyle.backgroundColor === probeStyle.backgroundColor,
+    "configuration scope popup background computes from the active OpenCode theme",
+  )
+  check(
+    selectedStyle.color === probeStyle.color,
+    "configuration scope option text computes from the active OpenCode theme",
+  )
+  themeProbe.style.background = "var(--v2-background-bg-layer-03)"
+  check(
+    selectedStyle.backgroundColor
+      === fixture.window.getComputedStyle(themeProbe).backgroundColor,
+    "configuration scope selected state computes from the active OpenCode theme",
+  )
+  themeProbe.remove()
+
+  options[1]?.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "Home",
+      bubbles: true,
+      cancelable: true,
+    }),
+  )
+  await waitFor(() => fixture.document.activeElement === options[0])
+  options[0]?.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "Enter",
+      bubbles: true,
+      cancelable: true,
+    }),
+  )
+  await waitFor(() => !scope.querySelector(".compact-popover"))
+  check(
+    trigger.textContent?.includes("Global")
+      && fixture.document.activeElement === trigger,
+    "Home and Enter select Global and restore trigger focus",
+  )
+
+  trigger.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "t",
+      bubbles: true,
+      cancelable: true,
+    }),
+  )
+  await waitFor(() => Boolean(scope.querySelector(".compact-popover")))
+  const typeaheadOption = required<HTMLElement>(
+    scope,
+    '.compact-option[data-compact-option-index="1"]',
+  )
+  await waitFor(() => fixture.document.activeElement === typeaheadOption)
+  typeaheadOption.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "Enter",
+      bubbles: true,
+      cancelable: true,
+    }),
+  )
+  await waitFor(() => !scope.querySelector(".compact-popover"))
+  check(
+    trigger.textContent?.includes("This project"),
+    "printable-character typeahead opens and selects This project",
+  )
+
+  trigger.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: " ",
+      bubbles: true,
+      cancelable: true,
+    }),
+  )
+  await waitFor(() => Boolean(scope.querySelector(".compact-popover")))
+  const selectedOption = required<HTMLElement>(
+    scope,
+    '.compact-option[aria-selected="true"]',
+  )
+  selectedOption.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    }),
+  )
+  await waitFor(() => !scope.querySelector(".compact-popover"))
+  check(
+    fixture.document.activeElement === trigger,
+    "Space opens and Escape closes configuration scope with focus restoration",
+  )
 }
 
 function assertNarrowLayout(
@@ -518,6 +830,10 @@ function close(
 
 function rounded(value: number): number {
   return Math.round(value * 10) / 10
+}
+
+function optionLabel(option: Element | undefined): string {
+  return option?.textContent?.replace("✓", "").trim() ?? ""
 }
 
 function normalizeCssValue(value: string): string {

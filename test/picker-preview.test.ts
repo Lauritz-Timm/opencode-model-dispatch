@@ -45,6 +45,7 @@ describe("picker preview fixtures", () => {
     expect(fixture.modelSelection.models.length).toBeGreaterThanOrEqual(4)
     expect(fixture.modelSelection.models.every((model) => Array.isArray(model.variants))).toBe(true)
     expect(fixture.modelSelection.models.some((model) => (model.variants as unknown[]).includes("deep-reasoning"))).toBe(true)
+    expect(fixture.modelSelection.models.find((model) => model.modelID === "gpt-4o")?.variants).toHaveLength(16)
     expect(fixture.modelSelection.applyToAllModels.map((model) => model.modelID)).toEqual([
       "claude-3-5-sonnet",
       "gpt-4o",
@@ -72,6 +73,7 @@ describe("picker preview fixtures", () => {
 
   test("dev launcher opens separate model picker and settings preview windows", async () => {
     const app = await readText("picker/src/App.svelte")
+    const compactSelect = await readText("picker/src/CompactSelect.svelte")
     const dts = await readText("picker/src/svelte.d.ts")
     const toggleRow = await readText("picker/src/ToggleRow.svelte")
     const numberRow = await readText("picker/src/NumberRow.svelte")
@@ -105,6 +107,7 @@ describe("picker preview fixtures", () => {
     expect(app).toContain("<ToggleRow")
     expect(app).toContain("<NumberRow")
     expect(app).toContain("<EffortSelect")
+    expect(app).toContain("<CompactSelect")
     expect(toggleRow).toContain('data-slot="switch-input"')
     expect(toggleRow).toContain('data-slot="switch-control"')
     expect(toggleRow).toContain('data-slot="switch-thumb"')
@@ -116,8 +119,14 @@ describe("picker preview fixtures", () => {
     expect(toggleRow).toContain('data-slot="settings-v2-row-control"')
     expect(numberRow).toContain('data-component="settings-v2-row"')
     expect(numberRow).toContain('data-slot="settings-v2-row-copy"')
-    expect(effortSelect).toContain('<option value="">Auto</option>')
-    expect(effortSelect).toContain("disabled={options.length === 0}")
+    expect(effortSelect).toContain('{ value: "", label: "Auto" }')
+    expect(effortSelect).toContain("{disabled}")
+    expect(effortSelect).toContain("<CompactSelect")
+    expect(`${app}\n${compactSelect}\n${effortSelect}`).not.toContain("<select")
+    expect(compactSelect).toContain('role="listbox"')
+    expect(compactSelect).toContain("overflow-y: auto")
+    expect(compactSelect).toContain("scrollIntoView")
+    expect(compactSelect).toContain("typeaheadPrefix")
     expect(app).toContain("--v2-background-bg-base")
     expect(app).toContain("--v2-border-border-muted")
     expect(dts).toContain("ImportMetaEnv")

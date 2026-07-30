@@ -715,14 +715,15 @@ describe("packaging and release assets", () => {
     )
   })
 
-  test("README documents install, config, setup, privacy, and troubleshooting", async () => {
+  test("public docs cover users and release operators", async () => {
     const readme = await readText("README.md")
+    const releasing = await readText("docs/releasing.md")
 
     for (const heading of ["## Install", "## Configuration", "## Setup", "## Privacy", "## Troubleshooting"]) {
       expect(readme).toContain(heading)
     }
-    expect(readme).toContain("mandatory local pre-tag gate")
-    expect(readme).toMatch(/contains no\s+repository-administration token/)
-    expect(readme).not.toContain("REPOSITORY_RULESET_AUDIT_TOKEN")
+    expect(releasing).toContain("mandatory local pre-tag gate")
+    expect(releasing).toMatch(/contains no\s+repository-administration token/)
+    expect(`${readme}\n${releasing}`).not.toContain("REPOSITORY_RULESET_AUDIT_TOKEN")
   })
 })

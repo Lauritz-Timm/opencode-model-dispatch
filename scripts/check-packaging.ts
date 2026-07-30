@@ -50,6 +50,24 @@ const repositoryUrl = "git+https://github.com/Lauritz-Timm/opencode-model-dispat
 const root = new URL("../", import.meta.url)
 const defaultPickerAssetRoot = new URL("../bin/", import.meta.url)
 const minimumExecutableBytes = 64
+export const releasePackageManifestFiles = [
+  "dist",
+  "bin",
+  "THIRD_PARTY_NOTICES.md",
+  "README.md",
+  "LICENSE",
+] as const
+const releasePackageRootFiles = [
+  "package.json",
+  "README.md",
+  "LICENSE",
+  "THIRD_PARTY_NOTICES.md",
+] as const
+const releasePackageRequiredFiles = [
+  ...releasePackageRootFiles,
+  "dist/index.js",
+  "dist/index.d.ts",
+] as const
 
 export const releasePickerAssets: ReleasePickerAsset[] =
   PICKER_TARGETS.map((target) => ({
@@ -174,6 +192,82 @@ export function releasePackageFileFailures(value: unknown): string[] {
   return failures
 }
 
+export function releasePackageManifestFailures(value: unknown): string[] {
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) {
+    return ["package files must be an exact string allowlist"]
+  }
+  const configured = value as string[]
+  const expected = new Set<string>(releasePackageManifestFiles)
+  const actual = new Set(configured)
+  const failures: string[] = []
+
+  if (actual.size !== configured.length) {
+    failures.push("package files must not contain duplicate entries")
+  }
+  for (const path of expected) {
+    if (!actual.has(path)) failures.push(`package files must contain exactly ${path}`)
+  }
+  for (const path of actual) {
+    if (!expected.has(path)) {
+      failures.push(`package files must not contain unexpected ${path}`)
+    }
+  }
+  return failures
+}
+
+export function releasePackageSurfaceFailures(value: unknown): string[] {
+  const entries = Array.isArray(value)
+    ? value
+    : value && typeof value === "object"
+      ? Object.values(value)
+      : []
+  if (entries.length !== 1) {
+    return [
+      `npm pack --dry-run must return exactly one package; received ${entries.length}`,
+    ]
+  }
+
+  const files = (entries[0] as NpmPackResult | undefined)?.files
+  if (!Array.isArray(files)) {
+    return ["npm pack --dry-run result must contain a files array"]
+  }
+
+  const failures: string[] = []
+  const paths = new Set<string>()
+  const allowedRootFiles = new Set<string>(releasePackageRootFiles)
+  const allowedBinFiles = new Set(
+    releasePackageBinFiles.map((file) => file.path),
+  )
+  for (const entry of files) {
+    const path = (entry as NpmPackFile | undefined)?.path
+    if (typeof path !== "string") {
+      failures.push("staged npm package entries must have string paths")
+      continue
+    }
+    paths.add(path)
+    const unsafeSegment = path
+      .split("/")
+      .some((segment) => segment === "" || segment === "." || segment === "..")
+    const allowed =
+      !unsafeSegment
+      && !path.includes("\\")
+      && (
+        allowedRootFiles.has(path)
+        || path.startsWith("dist/")
+        || allowedBinFiles.has(path)
+      )
+    if (!allowed) {
+      failures.push(`staged npm package must not contain unexpected ${path}`)
+    }
+  }
+  for (const path of releasePackageRequiredFiles) {
+    if (!paths.has(path)) {
+      failures.push(`staged npm package must contain ${path}`)
+    }
+  }
+  return failures
+}
+
 function formatMode(value: unknown): string {
   return typeof value === "number" && Number.isInteger(value) && value >= 0
     ? `0${(value & 0o777).toString(8)}`
@@ -208,7 +302,11 @@ async function stagedReleasePackageFailures(): Promise<string[]> {
       ]
     }
     try {
-      return releasePackageFileFailures(JSON.parse(stdout) as unknown)
+      const result = JSON.parse(stdout) as unknown
+      return [
+        ...releasePackageFileFailures(result),
+        ...releasePackageSurfaceFailures(result),
+      ]
     } catch (error) {
       return [
         `npm pack --dry-run returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
@@ -305,14 +403,7 @@ async function main(): Promise<void> {
     process.argv.includes("--require-all-pickers") ||
     process.env.REQUIRE_ALL_PICKERS === "1"
 
-  expectIncludes(failures, pkg.files, "dist", "package files")
-  expectIncludes(failures, pkg.files, "bin", "package files")
-  expectIncludes(
-    failures,
-    pkg.files,
-    "THIRD_PARTY_NOTICES.md",
-    "package files",
-  )
+  failures.push(...releasePackageManifestFailures(pkg.files))
   if (pkg.files?.includes("docs/manual-integration-gate.md")) {
     failures.push("package files must not include the release-operator manual gate")
   }

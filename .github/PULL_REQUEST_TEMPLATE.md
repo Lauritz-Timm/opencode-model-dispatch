@@ -3,11 +3,11 @@
 
 ## Verification
 
-- [ ] `bun test`
-- [ ] `bun run typecheck`
-- [ ] `bun run build`
+- Commands run:
+- Manual checks:
 
-## Notes
+## Impact
 
-- Hard gates affected:
-- Manual OpenCode integration:
+- User-visible behavior:
+- Compatibility, privacy, or packaging:
+- Screenshots for picker UI changes:

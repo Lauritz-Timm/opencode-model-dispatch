@@ -129,7 +129,11 @@ try {
   delete environment.WAYLAND_DISPLAY
 
   integration = Bun.spawn(
-    [process.execPath, join(root, "scripts", "test-opencode-server.ts")],
+    [
+      process.execPath,
+      join(root, "scripts", "test-opencode-server.ts"),
+      "--batch-override",
+    ],
     {
       cwd: root,
       env: environment,
@@ -153,33 +157,56 @@ try {
   await run([xdotool, "windowfocus", "--sync", windowID], process.env)
 
   // An inert click establishes WebKit's sequential focus at the picker panel.
-  // Its first two enabled controls are apply-to-all model and task model; both
-  // effort controls start disabled. Open the task popover and search for the
-  // exact child model rather than depending on catalog order.
+  // Start with Apply to all so the real batch receives one global selection.
   await run(
     [xdotool, "mousemove", "--window", windowID, "40", "100", "click", "1"],
     process.env,
   )
-  await run([xdotool, "key", "Tab", "Tab"], process.env)
+  await run([xdotool, "key", "Tab"], process.env)
   await run([xdotool, "key", "Down"], process.env)
   await Bun.sleep(200)
   await run(
-    [xdotool, "type", "--clearmodifiers", "--delay", "10", "child-model"],
+    [
+      xdotool,
+      "type",
+      "--clearmodifiers",
+      "--delay",
+      "10",
+      "child integration model child-model",
+    ],
     process.env,
   )
   await run([xdotool, "key", "Return"], process.env)
   await Bun.sleep(300)
 
-  // Selecting the child model enables its adjacent native effort select. End
-  // changes it to the final advertised value (High) immediately; Return would
-  // reopen the platform select on WebKitGTK, so advance without it.
+  // Selecting the child model enables every themed effort listbox. Apply High
+  // globally, then walk to the second task and give it a distinct model.
   await run([xdotool, "key", "Tab"], process.env)
+  await run([xdotool, "key", "Return"], process.env)
   await run([xdotool, "key", "End"], process.env)
+  await run([xdotool, "key", "Return"], process.env)
   await Bun.sleep(250)
 
-  // Tab across Cancel to the real primary action and submit. A disabled
-  // primary action cannot be activated, so this also proves both interactions
-  // produced a valid selection.
+  // From Apply-to-all effort, three tabs reach the second task model. Override
+  // it with second-child-model and select Medium via effort typeahead.
+  await run([xdotool, "key", "Tab", "Tab", "Tab", "Down"], process.env)
+  await Bun.sleep(200)
+  await run(
+    [xdotool, "type", "--clearmodifiers", "--delay", "10", "second-child-model"],
+    process.env,
+  )
+  await run([xdotool, "key", "Return"], process.env)
+  await Bun.sleep(300)
+  await run([xdotool, "key", "Tab", "Return"], process.env)
+  await run(
+    [xdotool, "type", "--clearmodifiers", "--delay", "10", "medium"],
+    process.env,
+  )
+  await run([xdotool, "key", "Return"], process.env)
+  await Bun.sleep(250)
+
+  // Tab across Cancel to the real primary action and submit. This only enables
+  // after both the global selection and the row override are valid.
   if (await windowExists(xdotool, windowID)) {
     await run([xdotool, "key", "Tab", "Tab", "Return"], process.env)
   }
@@ -199,6 +226,8 @@ try {
   if (
     !stdout.includes("loaded the installed npm package by its documented package name") ||
     !stdout.includes("through the bundled native picker") ||
+    !stdout.includes("global dispatch-test/child-model:high") ||
+    !stdout.includes("row override dispatch-test/second-child-model:medium") ||
     (useTui && !stdout.includes("from a prompt entered through its PTY-backed TUI"))
   ) {
     throw new Error(`Integration output did not prove the installed native path:\n${stdout}`)
@@ -206,7 +235,7 @@ try {
 
   console.log(stdout.trim())
   console.log(
-    `installed native package${useTui ? " TUI" : ""} integration passed: ${basename(tarballPath)} resolved by real OpenCode from plugin: ["opencode-model-dispatch"] and submitted model + effort through the packaged Tauri picker`,
+    `installed native package${useTui ? " TUI" : ""} integration passed: ${basename(tarballPath)} resolved by real OpenCode from plugin: ["opencode-model-dispatch"], applied child-model/High globally, and overrode the second task with second-child-model/Medium through the packaged Tauri picker`,
   )
 } catch (error) {
   let cleanupError: unknown

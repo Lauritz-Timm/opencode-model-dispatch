@@ -240,6 +240,34 @@ describe("public repository release gate", () => {
     expect(result.failures).toEqual([])
   })
 
+  test("rejects a required-workflow rule pinned to a stale workflow commit", () => {
+    const rule = (sha: string): RepositoryRule[] => [
+      { type: "deletion" },
+      { type: "non_fast_forward" },
+      {
+        type: "workflows",
+        parameters: {
+          workflows: [{
+            path: ".github/workflows/ci.yml",
+            repository_id: REPOSITORY_ID,
+            ref: "refs/heads/main",
+            sha,
+          }],
+        },
+      },
+    ]
+
+    expect(publicRepositoryReadiness(readySnapshot({
+      mainRules: verified(rule(RELEASE_SHA)),
+    })).failures).toEqual([])
+
+    expect(publicRepositoryReadiness(readySnapshot({
+      mainRules: verified(rule(STALE_SHA)),
+    })).failures).toContain(
+      "GitHub main branch must require the complete CI workflow with strict up-to-date checks",
+    )
+  })
+
   test("accepts complete classic branch protection when branch rulesets are unavailable", () => {
     const result = publicRepositoryReadiness(readySnapshot({
       mainRules: unavailable("rulesets are not configured"),

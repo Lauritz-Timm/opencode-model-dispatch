@@ -15,7 +15,8 @@ const binary = fileURLToPath(new URL(`../dist-picker/picker-${platform}-${proces
 await access(binary)
 console.log(
   "The native picker is opening with two unselected rows. "
-  + "Set Apply to all Model to GPT-5 mini and Effort to High, "
+  + "Set Apply to all Model to GPT-5 and Effort to High, "
+  + "then override reviewer to GPT-5 mini and Medium, "
   + "then click “Start tasks” within 10 minutes; Cancel is treated as a failed smoke test.",
 )
 
@@ -30,4 +31,4 @@ const decision = await launched.result
 if (decision.kind !== "submit") throw new Error(decision.kind === "cancel" ? "Picker smoke test was cancelled" : decision.reason)
 
 assertNativePickerSmokePayload(decision.payload)
-console.log("native GUI smoke passed: picker returned model and effort selections through the production stdio protocol")
+console.log("native GUI smoke passed: picker returned the global model/effort and reviewer override through the production stdio protocol")
