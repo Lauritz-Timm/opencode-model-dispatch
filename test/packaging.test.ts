@@ -10,6 +10,10 @@ import {
   releasePickerAssetFailures,
   releasePickerAssets,
 } from "../scripts/check-packaging"
+import {
+  pickerReadySmokeAttempts,
+  shouldRetryPickerReadySmoke,
+} from "../scripts/smoke-picker-ready"
 import { PICKER_TARGETS, pickerTargetForAsset } from "../src/picker-targets"
 
 const root = new URL("../", import.meta.url)
@@ -117,9 +121,12 @@ describe("packaging and release assets", () => {
     expect(pkg.scripts?.["check:release-ci"]).toBe("bun run scripts/check-release-ci.ts")
     expect(pkg.scripts?.["check:release-version"]).toBe("bun run scripts/check-release-version.ts")
     expect(pkg.scripts?.["check:release-package"]).toContain("--require-all-pickers")
-    expect(pkg.scripts?.["release:preflight"]).toContain("check:packaging")
-    expect(pkg.scripts?.["release:preflight"]).not.toContain("check:public-repo")
-    expect(pkg.scripts?.["release:preflight"]).not.toContain("check:release-package")
+    expect(pkg.scripts?.["release:candidate-preflight"]).toContain("check:packaging")
+    expect(pkg.scripts?.["release:candidate-preflight"]).not.toContain("check:public-repo")
+    expect(pkg.scripts?.["release:candidate-preflight"]).not.toContain("check:release-package")
+    expect(pkg.scripts?.["release:preflight"]).toBe(
+      "bun run release:candidate-preflight && bun run check:manual-gate",
+    )
     expect(pkg.scripts?.["release:artifact-preflight"]).toContain("check:release-package")
     expect(pkg.scripts?.prepublishOnly).toContain("check:release-package")
     expect(script).toContain("picker-${platform}-${arch}${ext}")
@@ -321,18 +328,29 @@ describe("packaging and release assets", () => {
     expect(await Bun.file(new URL("picker/public/assets", root)).exists()).toBe(false)
   })
 
-  test("CI validates plugin tests, Node consumers, typecheck, picker build, and packaging checks", async () => {
+  test("CI validates every supported picker OS and architecture independently", async () => {
     const workflow = await readText(".github/workflows/ci.yml")
     const headlessWrapper = await readText("scripts/run-with-openbox.sh")
     const nodeConsumer = await readText("scripts/test-node-consumer.mjs")
+    const packageManifest = await readJson<PackageJson>("package.json")
+    const hostCheck = await readText("scripts/check-built-picker.ts")
     const nodeConsumerJob = workflow.slice(
       workflow.indexOf("\n  node-consumer:"),
       workflow.indexOf("\n  opencode-integration:"),
     )
+    const x64PickerJob = workflow.slice(
+      workflow.indexOf("\n  picker-build:"),
+      workflow.indexOf("\n  picker-build-arm64:"),
+    )
     const arm64PickerJob = workflow.slice(
       workflow.indexOf("\n  picker-build-arm64:"),
+      workflow.indexOf("\n  picker-build-nonlinux:"),
+    )
+    const nonLinuxPickerJob = workflow.slice(
+      workflow.indexOf("\n  picker-build-nonlinux:"),
       workflow.indexOf("\n  packaging:"),
     )
+    const packagingJob = workflow.slice(workflow.indexOf("\n  packaging:"))
 
     expect(workflow).toContain("bun test")
     expect(workflow).toContain("bun run typecheck")
@@ -372,7 +390,12 @@ describe("packaging and release assets", () => {
     expect(workflow).toContain('WEBKIT_DISABLE_DMABUF_RENDERER: "1"')
     expect(workflow).toContain("xdotool")
     expect(workflow).toContain("runs-on: ubuntu-22.04")
+    expect(x64PickerJob).toContain("name: Picker build (Linux x64)")
+    expect(x64PickerJob).toContain("MODEL_DISPATCH_EXPECTED_PICKER_PLATFORM: linux")
+    expect(x64PickerJob).toContain("MODEL_DISPATCH_EXPECTED_PICKER_ARCH: x64")
+    expect(x64PickerJob).toContain("bun run check:picker-host")
     expect(arm64PickerJob).toContain("runs-on: ubuntu-22.04-arm")
+    expect(arm64PickerJob).toContain("name: Picker build (Linux ARM64)")
     expect(arm64PickerJob).toContain('test "$(uname -m)" = "aarch64"')
     expect(arm64PickerJob).toContain("process.stdout.write(process.arch)")
     expect(arm64PickerJob).toContain("picker-linux-arm64")
@@ -382,11 +405,80 @@ describe("packaging and release assets", () => {
     expect(arm64PickerJob).toContain("bun run test:package:native:opencode")
     expect(arm64PickerJob).toContain("bun run test:package:native:tui")
     expect(arm64PickerJob).not.toContain("continue-on-error")
+    expect(nonLinuxPickerJob).toContain("name: Picker build (${{ matrix.label }})")
+    expect(nonLinuxPickerJob).toContain("runs-on: ${{ matrix.runner }}")
+    expect(nonLinuxPickerJob).toContain("fail-fast: false")
+    expect(nonLinuxPickerJob).toContain("label: macOS ARM64")
+    expect(nonLinuxPickerJob).toContain("runner: macos-15")
+    expect(nonLinuxPickerJob).toContain("label: Windows x64")
+    expect(nonLinuxPickerJob).toContain("runner: windows-2025")
+    expect(nonLinuxPickerJob).toContain("label: Windows ARM64")
+    expect(nonLinuxPickerJob).toContain("runner: windows-11-arm")
+    expect(nonLinuxPickerJob).toContain("bun run check:picker-host")
+    expect(nonLinuxPickerJob).toContain(
+      "MODEL_DISPATCH_EXPECTED_PICKER_PLATFORM: ${{ matrix.platform }}",
+    )
+    expect(nonLinuxPickerJob).toContain(
+      "MODEL_DISPATCH_EXPECTED_PICKER_ARCH: ${{ matrix.arch }}",
+    )
+    expect(nonLinuxPickerJob).toContain(
+      "cargo test --manifest-path picker/src-tauri/Cargo.toml --locked",
+    )
+    expect(nonLinuxPickerJob).toContain("bun run test:picker-ready")
+    expect(nonLinuxPickerJob).not.toContain("continue-on-error")
+    expect(packageManifest.scripts?.["check:picker-host"]).toBe(
+      "bun run scripts/check-built-picker.ts",
+    )
+    expect(hostCheck).toContain("pickerTargetForNode(process.platform, process.arch)")
+    expect(hostCheck).toContain("target.rustTarget")
+    expect(hostCheck).toContain(
+      'releasePickerAssetFailures(assetRoot, [asset], "dist-picker")',
+    )
+    expect(packagingJob).toContain(
+      'devDependencies["@opencode-ai/plugin"]',
+    )
+    expect(packagingJob).toContain(
+      '"@opencode-ai/plugin@$peer_version" "./$pkg"',
+    )
+    expect(packagingJob).toContain("--package-lock=false")
     expect(workflow).not.toContain("- run: bun install\n        working-directory: picker")
     expect(headlessWrapper).toContain("openbox --sm-disable")
     expect(headlessWrapper).toContain("_NET_SUPPORTING_WM_CHECK")
     expect(headlessWrapper).toContain('kill -0 "$openbox_pid"')
     expect(headlessWrapper).toContain('"$@"')
+  })
+
+  test("Windows ready smoke retries only a startup timeout once", async () => {
+    const readySmoke = await readText("scripts/smoke-picker-ready.ts")
+
+    expect(pickerReadySmokeAttempts("win32")).toBe(2)
+    expect(pickerReadySmokeAttempts("linux")).toBe(1)
+    expect(pickerReadySmokeAttempts("darwin")).toBe(1)
+    expect(
+      shouldRetryPickerReadySmoke(
+        "win32",
+        1,
+        "Picker startup timeout after 60000ms",
+      ),
+    ).toBe(true)
+    expect(
+      shouldRetryPickerReadySmoke(
+        "win32",
+        2,
+        "Picker startup timeout after 60000ms",
+      ),
+    ).toBe(false)
+    expect(
+      shouldRetryPickerReadySmoke("win32", 1, "Picker lost stdio before ready"),
+    ).toBe(false)
+    expect(
+      shouldRetryPickerReadySmoke(
+        "linux",
+        1,
+        "Picker startup timeout after 60000ms",
+      ),
+    ).toBe(false)
+    expect(readySmoke).toContain("retrying once")
   })
 
   test("exact-tarball smoke launches the installed npm wrapper before the native picker", async () => {
@@ -402,6 +494,9 @@ describe("packaging and release assets", () => {
 
   test("tagged publish workflow publishes npm package and picker assets", async () => {
     const workflow = await readText(".github/workflows/publish.yml")
+    const notaryValidator = await readText(
+      "scripts/validate-apple-notary-log.swift",
+    )
     const validateJob = workflow.slice(
       workflow.indexOf("\n  validate:"),
       workflow.indexOf("\n  picker-unsigned:"),
@@ -601,6 +696,30 @@ describe("packaging and release assets", () => {
     expect(macosSigningJob).toContain("/usr/bin/security")
     expect(macosSigningJob).toContain("/usr/bin/codesign")
     expect(macosSigningJob).toContain("/usr/bin/xcrun notarytool")
+    expect(macosSigningJob).toContain('notarytool log "$notary_id"')
+    expect(macosSigningJob).toContain(
+      "/usr/sbin/spctl --assess --type exec",
+    )
+    expect(macosSigningJob).toContain("JSONSerialization.jsonObject")
+    expect(macosSigningJob).toContain('root.keys.contains("issues")')
+    expect(macosSigningJob).toContain("issues is NSNull")
+    expect(macosSigningJob).toContain(
+      "let issueList = issues as? [Any], issueList.isEmpty",
+    )
+    expect(macosSigningJob).toContain("notarization log contains issues or warnings")
+    expect(macosSigningJob).toContain(
+      'security delete-keychain "$keychain" || cleanup_status=$?',
+    )
+    expect(macosSigningJob).toContain(
+      '"$RUNNER_TEMP/validate-notary-log.swift"',
+    )
+    expect(macosSigningJob).toContain(
+      notaryValidator
+        .trimEnd()
+        .split("\n")
+        .map((line) => line ? `          ${line}` : "")
+        .join("\n"),
+    )
     expect(macosSigningJob).toContain("secrets.APPLE_CERTIFICATE")
     expect(macosSigningJob).not.toContain("secrets.WINDOWS_CERTIFICATE")
     expect(macosSigningJob.match(/secrets\.APPLE_[A-Z_]+/g)).toHaveLength(7)
@@ -657,7 +776,7 @@ describe("packaging and release assets", () => {
     }
     expect(stageJob).not.toContain("pattern: picker-*")
     expect(stageJob).toContain(
-      "actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26",
+      "actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d",
     )
     expect(stageJob).toContain("if: steps.draft.outputs.exists != 'true'")
     expect(stageJob).toContain("gh attestation verify")
@@ -715,14 +834,16 @@ describe("packaging and release assets", () => {
     )
   })
 
-  test("README documents install, config, setup, privacy, and troubleshooting", async () => {
+  test("public docs cover users and release operators", async () => {
     const readme = await readText("README.md")
+    const releasing = await readText("docs/releasing.md")
 
     for (const heading of ["## Install", "## Configuration", "## Setup", "## Privacy", "## Troubleshooting"]) {
       expect(readme).toContain(heading)
     }
-    expect(readme).toContain("mandatory local pre-tag gate")
-    expect(readme).toMatch(/contains no\s+repository-administration token/)
-    expect(readme).not.toContain("REPOSITORY_RULESET_AUDIT_TOKEN")
+    expect(releasing).toContain("mandatory local pre-tag gate")
+    expect(releasing).toMatch(/contains no\s+repository-administration token/)
+    expect(releasing).toContain("allowed action `npm publish`")
+    expect(`${readme}\n${releasing}`).not.toContain("REPOSITORY_RULESET_AUDIT_TOKEN")
   })
 })

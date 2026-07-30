@@ -66,11 +66,11 @@ export function assertNativePickerSmokePayload(payload: unknown): void {
   const byTask = new Map(selections.map((selection) => [selection.taskID, selection]))
   if (
     byTask.get("builder-task")?.providerID !== "openai" ||
-    byTask.get("builder-task")?.modelID !== "gpt-5-mini" ||
+    byTask.get("builder-task")?.modelID !== "gpt-5" ||
     byTask.get("builder-task")?.variant !== "high" ||
     byTask.get("reviewer-task")?.providerID !== "openai" ||
     byTask.get("reviewer-task")?.modelID !== "gpt-5-mini" ||
-    byTask.get("reviewer-task")?.variant !== "high"
+    byTask.get("reviewer-task")?.variant !== "medium"
   ) {
     throw new Error(`Picker returned unexpected selections: ${JSON.stringify(payload)}`)
   }

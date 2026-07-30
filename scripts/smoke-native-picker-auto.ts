@@ -29,33 +29,50 @@ if (launched.kind === "technical_failure") throw new Error(launched.reason)
 
 try {
   // Rust emits ready as soon as the frontend adapter mounts. Allow the WebKit
-  // layout and native select widget to finish painting before pixel-level input.
+  // layout and custom controls to finish painting before pixel-level input.
   await new Promise((resolve) => setTimeout(resolve, 5_000))
   const windowID = await findPickerWindow(xdotool)
   await run([xdotool, "windowfocus", "--sync", windowID])
-  // Change the batch model through the real Apply-to-all popover. This proves
-  // the shared catalog is wired into the native window instead of silently
-  // exercising only the task-row catalogs.
+  // Change the batch model through the real Apply-to-all popover. Search by
+  // stable model ID so the native automation does not depend on catalog order
+  // or key timing. This proves the shared catalog is wired into the native
+  // window instead of silently exercising only the task-row catalogs.
   await run([xdotool, "mousemove", "--window", windowID, "364", "164", "click", "1"])
   await new Promise((resolve) => setTimeout(resolve, 200))
-  await run([xdotool, "key", "End"])
+  await run([xdotool, "type", "--clearmodifiers", "--delay", "10", "gpt-5 gpt-5"])
+  await new Promise((resolve) => setTimeout(resolve, 200))
   await run([xdotool, "key", "Return"])
   await new Promise((resolve) => setTimeout(resolve, 300))
-  // The release window has a fixed 680x500 layout. Operate the Apply-to-all
-  // Effort select, choose its final advertised option (High), and commit it.
-  await run([xdotool, "mousemove", "--window", windowID, "578", "164", "click", "1"])
-  await new Promise((resolve) => setTimeout(resolve, 200))
+  // Selection restores focus to the Apply-to-all model trigger. Apply High to
+  // both rows, then override reviewer with a different model and effort.
+  await run([xdotool, "key", "Tab", "Return"])
   await run([xdotool, "key", "End"])
   await run([xdotool, "key", "Return"])
   await new Promise((resolve) => setTimeout(resolve, 250))
-  await run([xdotool, "mousemove", "--window", windowID, "605", "345", "click", "1"])
+
+  // From the Apply-to-all effort trigger, the third focusable control is the
+  // reviewer model. Search its exact stable ID, then choose Medium by
+  // typeahead in the adjacent themed effort listbox.
+  await run([xdotool, "key", "Tab", "Tab", "Tab", "Down"])
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  await run([xdotool, "type", "--clearmodifiers", "--delay", "10", "gpt-5-mini"])
+  await run([xdotool, "key", "Return"])
+  await new Promise((resolve) => setTimeout(resolve, 250))
+  await run([xdotool, "key", "Tab", "Return"])
+  await run([xdotool, "type", "--clearmodifiers", "--delay", "10", "medium"])
+  await run([xdotool, "key", "Return"])
+  await new Promise((resolve) => setTimeout(resolve, 250))
+
+  // Selection restores focus to the reviewer effort trigger. Traverse Cancel
+  // to the primary action and submit without relying on a moving coordinate.
+  await run([xdotool, "key", "Tab", "Tab", "Return"])
 
   const decision = await withTimeout(launched.result, 10_000, "Picker did not submit after automated controls")
   if (decision.kind !== "submit") {
     throw new Error(decision.kind === "cancel" ? "Automated picker smoke was cancelled" : decision.reason)
   }
   assertNativePickerSmokePayload(decision.payload)
-  console.log("automated native GUI smoke passed: real Tauri window applied one explicit model and effort to every task through its primary controls and production stdio")
+  console.log("automated native GUI smoke passed: real Tauri window applied GPT-5/High globally, overrode reviewer with GPT-5 mini/Medium, and submitted both selections through production stdio")
 } finally {
   launched.process.kill?.()
   await launched.process.exited.catch(() => undefined)

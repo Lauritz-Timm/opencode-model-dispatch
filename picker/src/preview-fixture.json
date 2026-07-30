@@ -41,7 +41,24 @@
         "providerName": "OpenAI",
         "modelID": "gpt-4o",
         "displayName": "GPT-4o",
-        "variants": ["minimal", "standard", "xhigh"]
+        "variants": [
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "fast",
+          "balanced",
+          "deep-reasoning",
+          "economy",
+          "standard",
+          "turbo",
+          "thinking",
+          "quick",
+          "extended",
+          "max",
+          "adaptive"
+        ]
       },
       {
         "providerID": "google",
@@ -64,7 +81,24 @@
         "providerName": "OpenAI",
         "modelID": "gpt-4o",
         "displayName": "GPT-4o",
-        "variants": ["minimal", "standard", "xhigh"]
+        "variants": [
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "fast",
+          "balanced",
+          "deep-reasoning",
+          "economy",
+          "standard",
+          "turbo",
+          "thinking",
+          "quick",
+          "extended",
+          "max",
+          "adaptive"
+        ]
       }
     ]
   },

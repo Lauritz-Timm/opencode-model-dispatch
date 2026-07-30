@@ -51,12 +51,15 @@ describe("release source preflight", () => {
     ])
   })
 
-  test("requires lockfiles, public community files, security policy, and workflows to be tracked", () => {
+  test("requires lockfiles, public docs, release tooling, and workflows to be tracked", () => {
     const missing = new Set([
       ".npmignore",
+      ".github/workflows/compatibility.yml",
       "bun.lock",
+      "docs/compatibility.md",
       "picker/bun.lock",
       "picker/src-tauri/Cargo.lock",
+      "scripts/resolve-opencode-compatibility.ts",
       "third-party/about.toml",
       "third-party/RUST_THIRD_PARTY_LICENSES.md",
       "SECURITY.md",

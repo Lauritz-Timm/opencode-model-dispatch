@@ -15,7 +15,11 @@ export const REQUIRED_CI_CHECK_CONTEXTS = [
   "Node 18 package consumer",
   "Node 22 package consumer",
   "Real OpenCode integration",
-  "Picker build",
+  "Picker build (Linux x64)",
+  "Picker build (Linux ARM64)",
+  "Picker build (macOS ARM64)",
+  "Picker build (Windows x64)",
+  "Picker build (Windows ARM64)",
   "Packaging checks",
 ] as const
 export const GITHUB_ACTIONS_APP_ID = 15368
@@ -193,6 +197,7 @@ export function publicRepositoryReadiness(
     snapshot.mainRules,
     snapshot.classicMainProtection,
     repository.id,
+    snapshot.expectedSha,
     failures,
   )
   requireReleaseTagProtection(
@@ -327,6 +332,7 @@ function requireMainProtection(
   rulesVerification: Verification<RepositoryRule[]>,
   classicVerification: Verification<ClassicBranchProtection>,
   repositoryId: number,
+  expectedSha: string,
   failures: string[],
 ): void {
   const rules = rulesVerification.status === "verified" ? rulesVerification.value : []
@@ -339,7 +345,9 @@ function requireMainProtection(
     || classic?.allow_deletions?.enabled === false
   const blocksForcePushes = types.has("non_fast_forward")
     || classic?.allow_force_pushes?.enabled === false
-  const requiresCi = rules.some((rule) => requiresCompleteCi(rule, repositoryId))
+  const requiresCi = rules.some((rule) =>
+    requiresCompleteCi(rule, repositoryId, expectedSha)
+  )
     || classicRequiresCompleteCi(classic)
 
   if (!blocksDeletion) {
@@ -369,6 +377,7 @@ function requireMainProtection(
 function requiresCompleteCi(
   rule: RepositoryRule,
   repositoryId: number,
+  expectedSha: string,
 ): boolean {
   if (rule.type === "workflows") {
     return (rule.parameters?.workflows ?? []).some((workflow) =>
@@ -377,7 +386,11 @@ function requiresCompleteCi(
       && (workflow.ref === "refs/heads/main" || workflow.ref === "main")
       && (
         workflow.sha === undefined
-        || COMMIT_SHA_PATTERN.test(workflow.sha)
+        || (
+          COMMIT_SHA_PATTERN.test(workflow.sha)
+          && COMMIT_SHA_PATTERN.test(expectedSha)
+          && workflow.sha.toLowerCase() === expectedSha.toLowerCase()
+        )
       )
     )
   }

@@ -12,12 +12,14 @@ import {
 } from "./local-npm-registry"
 import { PICKER_SMOKE_STARTUP_TIMEOUT_MS } from "./picker-smoke-fixture"
 
-const OPENCODE_VERSION = "1.18.7"
+const PINNED_OPENCODE_VERSION = "1.18.7"
+const OPENCODE_VERSION = expectedOpenCodeVersion()
 const PROVIDER_ID = "dispatch-test"
 const PARENT_MODEL_ID = "parent-model"
 const CHILD_MODEL_ID = "child-model"
 const SECOND_CHILD_MODEL_ID = "second-child-model"
 const SELECTED_VARIANT = "high"
+const OVERRIDE_VARIANT = "medium"
 const CHILD_PROMPT = "Return the deterministic child marker and do nothing else."
 const SECOND_CHILD_PROMPT = "Return the deterministic second child marker and do nothing else."
 const FIRST_TASK_CALL_ID = "call_dispatch_integration_first"
@@ -51,7 +53,9 @@ const installedPluginTarball = process.env.MODEL_DISPATCH_TEST_PLUGIN_TARBALL
 const useBundledNativePicker = process.env.MODEL_DISPATCH_TEST_USE_BUNDLED_PICKER === "1"
 const useTui = process.env.MODEL_DISPATCH_TEST_TUI === "1"
 const testConcurrentSameAgentFifo = process.argv.includes("--same-agent-fifo")
-const parentPrompt = testConcurrentSameAgentFifo ? CONCURRENT_PARENT_PROMPT : PARENT_PROMPT
+const testBatchOverride = process.argv.includes("--batch-override")
+const testTwoTaskBatch = testConcurrentSameAgentFifo || testBatchOverride
+const parentPrompt = testTwoTaskBatch ? CONCURRENT_PARENT_PROMPT : PARENT_PROMPT
 
 let child: ReturnType<typeof Bun.spawn> | undefined
 let stdoutText: Promise<string> | undefined
@@ -64,6 +68,10 @@ try {
   assert(
     !testConcurrentSameAgentFifo || (!useTui && !useBundledNativePicker),
     "The same-agent FIFO regression uses the deterministic fake picker and server API mode",
+  )
+  assert(
+    !testBatchOverride || useBundledNativePicker,
+    "The global-plus-row override regression requires the bundled native picker",
   )
   assert(
     Boolean(installedPluginPackage) === Boolean(installedPluginTarball),
@@ -112,7 +120,7 @@ try {
       privacy: { logging_enabled: false },
       dispatch: {
         enabled: true,
-        batch_ms: testConcurrentSameAgentFifo ? 25 : 1,
+        batch_ms: testTwoTaskBatch ? 25 : 1,
         picker_timeout_ms: useBundledNativePicker
           ? PICKER_SMOKE_STARTUP_TIMEOUT_MS
           : FAKE_PICKER_STARTUP_TIMEOUT_MS,
@@ -252,10 +260,17 @@ try {
       "read parent messages",
     )
   }
-  if (testConcurrentSameAgentFifo) {
-    await assertConcurrentSameAgentDispatch(client, parent.id, parentMessages)
-    const pickerEvidence = JSON.parse(await readFile(pickerEvidencePath, "utf8")) as unknown
-    assertConcurrentPickerEvidence(pickerEvidence)
+  if (testTwoTaskBatch) {
+    await assertConcurrentBatchDispatch(
+      client,
+      parent.id,
+      parentMessages,
+      testBatchOverride ? OVERRIDE_VARIANT : SELECTED_VARIANT,
+    )
+    if (testConcurrentSameAgentFifo) {
+      const pickerEvidence = JSON.parse(await readFile(pickerEvidencePath, "utf8")) as unknown
+      assertConcurrentPickerEvidence(pickerEvidence)
+    }
     assertChildLLMRequest(
       llm.requests,
       CHILD_PROMPT,
@@ -267,6 +282,7 @@ try {
       SECOND_CHILD_PROMPT,
       "second same-agent child request",
       SECOND_CHILD_MODEL_ID,
+      testBatchOverride ? OVERRIDE_VARIANT : SELECTED_VARIANT,
     )
   } else {
     const taskPart = findCompletedTaskPart(parentMessages)
@@ -308,7 +324,9 @@ try {
   console.log(
     testConcurrentSameAgentFifo
       ? `OpenCode same-agent FIFO integration passed: ${OPENCODE_VERSION} dispatched two concurrent real built-in tasks for general to ${PROVIDER_ID}/${CHILD_MODEL_ID}:${SELECTED_VARIANT} then ${PROVIDER_ID}/${SECOND_CHILD_MODEL_ID}:${SELECTED_VARIANT} without swapping (${opencode})`
-      : `OpenCode integration passed: ${OPENCODE_VERSION} loaded ${installedPluginPackage ? "the installed npm package by its documented package name" : "the worktree plugin"} and dispatched a real built-in task${useTui ? " from a prompt entered through its PTY-backed TUI" : ""} to ${PROVIDER_ID}/${CHILD_MODEL_ID}:${SELECTED_VARIANT}, including task metadata and child-session persistence${useBundledNativePicker ? " through the bundled native picker" : ""} (${opencode})`,
+      : testBatchOverride
+        ? `OpenCode integration passed: ${OPENCODE_VERSION} loaded ${installedPluginPackage ? "the installed npm package by its documented package name" : "the worktree plugin"} and dispatched two real built-in tasks${useTui ? " from a prompt entered through its PTY-backed TUI" : ""} through the bundled native picker to global ${PROVIDER_ID}/${CHILD_MODEL_ID}:${SELECTED_VARIANT} and row override ${PROVIDER_ID}/${SECOND_CHILD_MODEL_ID}:${OVERRIDE_VARIANT}, including task metadata and child-session persistence (${opencode})`
+        : `OpenCode integration passed: ${OPENCODE_VERSION} loaded ${installedPluginPackage ? "the installed npm package by its documented package name" : "the worktree plugin"} and dispatched a real built-in task${useTui ? " from a prompt entered through its PTY-backed TUI" : ""} to ${PROVIDER_ID}/${CHILD_MODEL_ID}:${SELECTED_VARIANT}, including task metadata and child-session persistence${useBundledNativePicker ? " through the bundled native picker" : ""} (${opencode})`,
   )
 } catch (error) {
   if (child && child.exitCode === null) await stopChild(child)
@@ -496,7 +514,10 @@ async function waitForCompletedParentMessages(
         await client.session.messages({ sessionID }),
         "read TUI parent messages",
       )
-      if (completedTaskPart(messages)) return messages
+      const expectedTaskCount = testTwoTaskBatch ? 2 : 1
+      if (completedTaskParts(messages).length >= expectedTaskCount) {
+        return messages
+      }
     } catch (error) {
       lastError = error
     }
@@ -518,7 +539,7 @@ async function writePluginShim(entry: string, destination: string): Promise<void
 }
 
 async function seedLocalPluginRuntime(directory: string): Promise<void> {
-  const dependencies = { "@opencode-ai/plugin": OPENCODE_VERSION }
+  const dependencies = { "@opencode-ai/plugin": PINNED_OPENCODE_VERSION }
   await mkdir(join(directory, "node_modules"), { recursive: true })
   await Promise.all([
     writeFile(
@@ -567,7 +588,7 @@ function startFakeLLM(port: number): FakeLLM {
       const model = readString(body, "model")
       if (model === PARENT_MODEL_ID && hasToolResult(body)) {
         return chatTextResponse(
-          testConcurrentSameAgentFifo
+          testTwoTaskBatch
             ? "parent received both deterministic child results"
             : "parent received deterministic child result",
         )
@@ -582,7 +603,7 @@ function startFakeLLM(port: number): FakeLLM {
         return chatTextResponse("deterministic fallback child marker")
       }
       if (model === PARENT_MODEL_ID) {
-        if (testConcurrentSameAgentFifo) {
+        if (testTwoTaskBatch) {
           return chatToolResponses([
             {
               id: FIRST_TASK_CALL_ID,
@@ -736,7 +757,7 @@ function openCodeConfig(
               [SELECTED_VARIANT]: { reasoningEffort: SELECTED_VARIANT },
             },
           },
-          ...(testConcurrentSameAgentFifo
+          ...(testTwoTaskBatch
             ? {
                 [SECOND_CHILD_MODEL_ID]: {
                   name: "Second child integration model",
@@ -747,6 +768,13 @@ function openCodeConfig(
                     [SELECTED_VARIANT]: {
                       reasoningEffort: SELECTED_VARIANT,
                     },
+                    ...(testBatchOverride
+                      ? {
+                          [OVERRIDE_VARIANT]: {
+                            reasoningEffort: OVERRIDE_VARIANT,
+                          },
+                        }
+                      : {}),
                   },
                 },
               }
@@ -841,10 +869,11 @@ function completedTaskParts(messages: unknown[]): Record<string, unknown>[] {
   return completed
 }
 
-async function assertConcurrentSameAgentDispatch(
+async function assertConcurrentBatchDispatch(
   client: ReturnType<typeof createOpencodeClient>,
   parentSessionID: string,
   messages: unknown[],
+  secondExpectedVariant: string,
 ): Promise<void> {
   const taskParts = completedTaskParts(messages)
   assert(
@@ -873,6 +902,7 @@ async function assertConcurrentSameAgentDispatch(
     SECOND_CHILD_PROMPT,
     SECOND_CHILD_MODEL_ID,
     "second same-agent task",
+    secondExpectedVariant,
   )
   assert(
     firstChildSessionID !== secondChildSessionID,
@@ -887,6 +917,7 @@ async function assertCompletedTaskDispatch(
   expectedPrompt: string,
   expectedModelID: string,
   label: string,
+  expectedVariant = SELECTED_VARIANT,
 ): Promise<string> {
   const taskMetadata = asRecord(asRecord(taskPart.state).metadata)
   assertSelection(
@@ -894,6 +925,7 @@ async function assertCompletedTaskDispatch(
     `${label} completed metadata`,
     "modelID",
     expectedModelID,
+    expectedVariant,
   )
 
   const childSessionID = readString(taskMetadata, "sessionId")
@@ -915,6 +947,7 @@ async function assertCompletedTaskDispatch(
     `${label} persisted child session model`,
     "id",
     expectedModelID,
+    expectedVariant,
   )
 
   const v2ChildEnvelope = apiData(
@@ -927,6 +960,7 @@ async function assertCompletedTaskDispatch(
     `${label} v2 persisted child session model`,
     "id",
     expectedModelID,
+    expectedVariant,
   )
   const v2History = apiData(
     await client.v2.session.history({ sessionID: childSessionID, limit: 50 }),
@@ -943,6 +977,7 @@ async function assertCompletedTaskDispatch(
     `${label} v2 persisted model-switch event`,
     "id",
     expectedModelID,
+    expectedVariant,
   )
 
   const childMessages = apiData(
@@ -962,6 +997,7 @@ async function assertCompletedTaskDispatch(
     `${label} child user-message model`,
     "modelID",
     expectedModelID,
+    expectedVariant,
   )
   return childSessionID
 }
@@ -1026,6 +1062,7 @@ function assertChildLLMRequest(
   prompt: string,
   label: string,
   expectedModelID: string,
+  expectedVariant = SELECTED_VARIANT,
 ): void {
   const matchingChildRequests = requests.filter((candidate) => {
     const serialized = JSON.stringify(candidate.body)
@@ -1041,8 +1078,8 @@ function assertChildLLMRequest(
     `${label} was swapped to ${String(request.body.model)} instead of ${expectedModelID}: ${JSON.stringify(request.body)}`,
   )
   assert(
-    request.body.reasoning_effort === SELECTED_VARIANT,
-    `${label} reached ${expectedModelID} without reasoning_effort=${SELECTED_VARIANT}: ${JSON.stringify(request.body)}`,
+    request.body.reasoning_effort === expectedVariant,
+    `${label} reached ${expectedModelID} without reasoning_effort=${expectedVariant}: ${JSON.stringify(request.body)}`,
   )
 }
 
@@ -1051,12 +1088,13 @@ function assertSelection(
   label: string,
   modelIDKey = "modelID",
   expectedModelID = CHILD_MODEL_ID,
+  expectedVariant = SELECTED_VARIANT,
 ): void {
   assert(
     value.providerID === PROVIDER_ID &&
       value[modelIDKey] === expectedModelID &&
-      value.variant === SELECTED_VARIANT,
-    `${label} did not preserve ${PROVIDER_ID}/${expectedModelID}:${SELECTED_VARIANT}: ${JSON.stringify(value)}`,
+      value.variant === expectedVariant,
+    `${label} did not preserve ${PROVIDER_ID}/${expectedModelID}:${expectedVariant}: ${JSON.stringify(value)}`,
   )
 }
 
@@ -1184,6 +1222,17 @@ async function assertOpenCodeVersion(opencode: string): Promise<void> {
     result.exitCode === 0 && stdout === OPENCODE_VERSION,
     `OpenCode integration requires exactly ${OPENCODE_VERSION}; ${opencode} returned exit ${result.exitCode}, stdout=${JSON.stringify(stdout)}, stderr=${JSON.stringify(stderr)}`,
   )
+}
+
+function expectedOpenCodeVersion(): string {
+  const explicit = process.env.OPENCODE_TEST_VERSION
+  if (explicit === undefined) return PINNED_OPENCODE_VERSION
+  if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(explicit)) {
+    throw new Error(
+      "OPENCODE_TEST_VERSION must be an exact stable x.y.z version",
+    )
+  }
+  return explicit
 }
 
 async function resolveOpenCodeBinary(): Promise<string> {
