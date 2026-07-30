@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises"
+import { readFile, readdir } from "node:fs/promises"
 import { join } from "node:path"
 
 import { releasePickerAssets } from "./check-packaging"
@@ -43,6 +43,52 @@ export async function assertExactPickerAssets(
       )
     }
   }
+}
+
+export async function assertCandidatePickerAssets(options: {
+  releaseBin: string
+  localPicker: string
+  installedBin: string
+  localAssetName: string
+}): Promise<"complete-release" | "local-candidate"> {
+  const installedAssets = (await readdir(options.installedBin))
+    .filter((name) => name.startsWith("picker-"))
+    .sort()
+  const completeAssets = releasePickerAssets.map((asset) => asset.name).sort()
+  if (
+    installedAssets.length === completeAssets.length &&
+    installedAssets.every((name, index) => name === completeAssets[index])
+  ) {
+    await assertExactPickerAssets(options.releaseBin, options.installedBin)
+    return "complete-release"
+  }
+
+  if (
+    installedAssets.length !== 1 ||
+    installedAssets[0] !== options.localAssetName
+  ) {
+    throw new Error(
+      "Installed candidate must contain either every release picker or exactly "
+      + `the local ${options.localAssetName} picker; received ${installedAssets.join(", ") || "none"}`,
+    )
+  }
+
+  const [sourceBytes, installedBytes] = await Promise.all([
+    readRequiredAsset(
+      options.localPicker,
+      `local candidate ${options.localAssetName}`,
+    ),
+    readRequiredAsset(
+      join(options.installedBin, options.localAssetName),
+      `installed package bin/${options.localAssetName}`,
+    ),
+  ])
+  if (!sourceBytes.equals(installedBytes)) {
+    throw new Error(
+      `Installed package bin/${options.localAssetName} differs from the local candidate picker`,
+    )
+  }
+  return "local-candidate"
 }
 
 type ProcessKill = (

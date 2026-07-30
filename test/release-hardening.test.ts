@@ -33,6 +33,7 @@ describe("release hardening", () => {
       readText(".github/workflows/ci.yml"),
       readText(".github/workflows/compatibility.yml"),
       readText(".github/workflows/publish.yml"),
+      readText(".github/workflows/verify-release-oidc.yml"),
     ])
     const combined = workflows.join("\n")
 
@@ -73,6 +74,16 @@ describe("release hardening", () => {
             "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
           )
         }
+        if (ref?.startsWith("azure/login@")) {
+          expect(ref).toBe(
+            "azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43",
+          )
+        }
+        if (ref?.startsWith("azure/artifact-signing-action@")) {
+          expect(ref).toBe(
+            "azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82",
+          )
+        }
       }
 
       const setupNodeCount = workflow.match(/actions\/setup-node@/g)?.length ?? 0
@@ -96,7 +107,7 @@ describe("release hardening", () => {
     ])
   })
 
-  test("platform signing secrets are isolated behind protected environments", async () => {
+  test("platform signing credentials are isolated behind protected environments", async () => {
     const workflow = await readText(".github/workflows/publish.yml")
     const macos = workflowJob(
       workflow,
@@ -114,8 +125,48 @@ describe("release hardening", () => {
     expect(macos).not.toContain("secrets.WINDOWS_CERTIFICATE")
 
     expect(windows).toContain("environment: release-signing-windows")
-    expect(windows).toContain("secrets.WINDOWS_CERTIFICATE")
+    expect(windows).toContain("id-token: write")
+    expect(windows).toContain(
+      "azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43",
+    )
+    expect(windows).toContain(
+      "azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82",
+    )
+    expect(windows).toContain("vars.AZURE_ARTIFACT_SIGNING_ENDPOINT")
+    expect(windows).toContain("vars.EXPECTED_WINDOWS_SIGNER_SUBJECT")
+    expect(windows).toContain("cache-dependencies: false")
+    expect(windows).toContain("append-signature: false")
+    expect(windows).toContain(
+      "[System.Management.Automation.SignatureStatus]::NotSigned",
+    )
+    expect(windows).toContain(
+      "Windows picker signer subject does not match EXPECTED_WINDOWS_SIGNER_SUBJECT",
+    )
+    expect(windows).not.toContain("secrets.WINDOWS_CERTIFICATE")
     expect(windows).not.toContain("secrets.APPLE_CERTIFICATE")
+  })
+
+  test("manual OIDC proof is main-only, environment-bound, and secretless", async () => {
+    const workflow = await readText(
+      ".github/workflows/verify-release-oidc.yml",
+    )
+
+    expect(workflow).toContain("workflow_dispatch:")
+    expect(workflow).toContain("permissions: {}")
+    expect(workflow).toContain('test "$GITHUB_REF" = "refs/heads/main"')
+    expect(workflow).toContain("needs: validate-ref")
+    expect(workflow).toContain("environment: release-signing-windows")
+    expect(workflow).toContain("id-token: write")
+    expect(workflow).toContain("ACTIONS_ID_TOKEN_REQUEST_URL")
+    expect(workflow).toContain("api://AzureADTokenExchange")
+    expect(workflow).toContain("https://token.actions.githubusercontent.com")
+    expect(workflow).toContain(
+      "repo:Lauritz-Timm@269186225/opencode-model-dispatch@1290427988"
+      + ":environment:release-signing-windows",
+    )
+    expect(workflow).not.toContain("actions/checkout@")
+    expect(workflow).not.toContain("${{ secrets.")
+    expect(workflow).not.toContain("contents: write")
   })
 
   test("npm release files and staged top-level paths are exact allowlists", () => {

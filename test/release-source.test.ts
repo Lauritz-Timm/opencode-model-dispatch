@@ -59,11 +59,13 @@ describe("release source preflight", () => {
       "docs/compatibility.md",
       "picker/bun.lock",
       "picker/src-tauri/Cargo.lock",
+      "scripts/manual-candidate-support.ts",
       "scripts/resolve-opencode-compatibility.ts",
       "third-party/about.toml",
       "third-party/RUST_THIRD_PARTY_LICENSES.md",
       "SECURITY.md",
       ".github/workflows/publish.yml",
+      ".github/workflows/verify-release-oidc.yml",
       ".github/dependabot.yml",
     ])
     const failures = releaseSourceFailures(releaseSource({

@@ -53,6 +53,11 @@ export interface DependabotSecurityUpdates {
   paused?: boolean
 }
 
+export interface OidcSubjectCustomization {
+  use_default?: boolean
+  use_immutable_subject?: boolean
+}
+
 export interface RepositoryRule {
   type?: string
   parameters?: {
@@ -115,6 +120,7 @@ export interface PublicRepositorySnapshot {
   vulnerabilityReporting: Verification<PrivateVulnerabilityReporting>
   immutableReleases: Verification<ImmutableReleases>
   dependabotSecurityUpdates: Verification<DependabotSecurityUpdates>
+  oidcSubjectCustomization: Verification<OidcSubjectCustomization>
   mainRules: Verification<RepositoryRule[]>
   classicMainProtection: Verification<ClassicBranchProtection>
   releaseTagRulesets: Verification<RepositoryRuleset[]>
@@ -193,6 +199,10 @@ export function publicRepositoryReadiness(
     failures,
   )
   requireDependabotSecurityUpdates(snapshot.dependabotSecurityUpdates, failures)
+  requireImmutableOidcSubject(
+    snapshot.oidcSubjectCustomization,
+    failures,
+  )
   requireMainProtection(
     snapshot.mainRules,
     snapshot.classicMainProtection,
@@ -247,6 +257,7 @@ export async function collectPublicRepositorySnapshot(
     vulnerabilityReporting,
     immutableReleases,
     dependabotSecurityUpdates,
+    oidcSubjectCustomization,
     mainRules,
     classicMainProtection,
     releaseTagRulesets,
@@ -269,6 +280,12 @@ export async function collectPublicRepositorySnapshot(
       `/repos/${slug}/automated-security-fixes`,
       "Dependabot security updates",
       isDependabotSecurityUpdates,
+    ),
+    getVerifiedJson(
+      settingsContext,
+      `/repos/${slug}/actions/oidc/customization/sub`,
+      "immutable OIDC subject customization",
+      isOidcSubjectCustomization,
     ),
     getVerifiedArray(
       settingsContext,
@@ -293,6 +310,7 @@ export async function collectPublicRepositorySnapshot(
     vulnerabilityReporting,
     immutableReleases,
     dependabotSecurityUpdates,
+    oidcSubjectCustomization,
     mainRules,
     classicMainProtection,
     releaseTagRulesets,
@@ -325,6 +343,25 @@ function requireDependabotSecurityUpdates(
     failures.push(`${label} must be enabled`)
   } else if (verification.value.paused !== false) {
     failures.push(`${label} must not be paused`)
+  }
+}
+
+function requireImmutableOidcSubject(
+  verification: Verification<OidcSubjectCustomization>,
+  failures: string[],
+): void {
+  const label = "GitHub immutable OIDC subject customization"
+  if (verification.status === "unavailable") {
+    failures.push(`${label} could not be verified: ${verification.reason}`)
+    return
+  }
+  if (
+    verification.value.use_default !== true
+    || verification.value.use_immutable_subject !== true
+  ) {
+    failures.push(
+      `${label} must keep the default context and enable immutable owner/repository IDs`,
+    )
   }
 }
 
@@ -802,6 +839,14 @@ function isDependabotSecurityUpdates(
   return isObject(value)
     && typeof value.enabled === "boolean"
     && typeof value.paused === "boolean"
+}
+
+function isOidcSubjectCustomization(
+  value: unknown,
+): value is OidcSubjectCustomization {
+  return isObject(value)
+    && typeof value.use_default === "boolean"
+    && typeof value.use_immutable_subject === "boolean"
 }
 
 function isRepositoryRule(value: unknown): value is RepositoryRule {

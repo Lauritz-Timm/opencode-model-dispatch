@@ -32,6 +32,14 @@ bun run typecheck
 Use the frozen lockfiles in normal development and CI-facing verification. Add
 or update dependencies deliberately, then commit the resulting lockfile.
 
+The pinned `@opencode-ai/plugin` and `@opencode-ai/sdk` development versions
+must equal the lower bound in `engines.opencode`. They are the compile, bundle,
+and minimum-runtime contract fixtures, while the nightly compatibility workflow
+tests newer OpenCode versions. Dependabot therefore skips ordinary version
+updates for those two packages. Dependabot security updates remain enabled and
+must trigger a coordinated contract review rather than an isolated version
+bump.
+
 ## Repository Structure
 
 | Path | Responsibility |

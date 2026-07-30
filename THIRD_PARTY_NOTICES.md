@@ -5,8 +5,8 @@ component inventory in `third-party/components.json`. Do not edit it by hand.
 
 Dependency inputs:
 
-- `bun.lock` (SHA-256: `f2a5f36973431ca6d45214e8ad2d7c2755be4aeab31ebcf420b552596e5687d0`)
-- `picker/bun.lock` (SHA-256: `7dcfde9990ba0b2db7ad3996f124ef12b99db463ee32f453de48380d08ea4d36`)
+- `bun.lock` (SHA-256: `5cd883f35956099e7050ff28f51454cf98afc1ca3df8a29b6384c8591c1d98a9`)
+- `picker/bun.lock` (SHA-256: `2bbfadd4a47521b38aeb89a461dc6b5dc3f9d2f362e1e2023fd0176315942a35`)
 - `picker/src-tauri/Cargo.lock` (SHA-256: `7dd1e5e67fccc1a12eff5e25a2476a8110a707bd870eb721d6c1cf13dbca1e4c`)
 
 ## Bundled JavaScript and adapted source

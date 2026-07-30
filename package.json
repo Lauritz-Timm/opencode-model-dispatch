@@ -61,7 +61,7 @@
     "check:release-version": "bun run scripts/check-release-version.ts",
     "notices:generate": "bun run scripts/generate-third-party-notices.ts",
     "check:notices": "bun run scripts/generate-third-party-notices.ts --check",
-    "check:package-types": "tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --skipLibCheck false dist/index.d.ts",
+    "check:package-types": "tsc --noEmit --ignoreConfig --types bun-types --target ES2022 --module NodeNext --moduleResolution NodeNext --skipLibCheck false dist/index.d.ts",
     "check:public-repo": "bun run scripts/check-public-repository.ts",
     "check:manual-gate": "bun run scripts/check-manual-gate.ts",
     "check:release-package": "bun run check:release-version && bun run scripts/check-packaging.ts --require-all-pickers",
@@ -74,6 +74,10 @@
     "test:picker-ready": "bun run scripts/smoke-picker-ready.ts",
     "test:gui": "bun run build:picker && bun run scripts/smoke-native-picker.ts",
     "test:gui:auto": "bun run build:picker && bun run scripts/smoke-native-picker-auto.ts",
+    "release:manual-candidate": "bun run scripts/manual-candidate.ts prepare",
+    "release:manual-candidate:install": "bun run scripts/manual-candidate.ts install",
+    "release:manual-candidate:test": "bun run scripts/manual-candidate.ts test",
+    "release:manual-candidate:test:tui": "bun run scripts/manual-candidate.ts test --tui",
     "release:candidate-preflight": "bun run check:release-source && bun run check:release-version && bun run check:notices && bun run typecheck && bun run check:coverage && cargo test --manifest-path picker/src-tauri/Cargo.toml --locked && bun run check:packaging && bun run test:package",
     "release:preflight": "bun run release:candidate-preflight && bun run check:manual-gate",
     "release:artifact-preflight": "bun run check:notices && bun run check:release-package && bun run test:package",
@@ -87,8 +91,8 @@
     "@opencode-ai/plugin": ">=1.18.7 <2"
   },
   "devDependencies": {
-    "@opencode-ai/plugin": "1.18.10",
-    "@opencode-ai/sdk": "1.18.9",
+    "@opencode-ai/plugin": "1.18.7",
+    "@opencode-ai/sdk": "1.18.7",
     "typescript": "7.0.2",
     "bun-types": "1.3.14"
   }

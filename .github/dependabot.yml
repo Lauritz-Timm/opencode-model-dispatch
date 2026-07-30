@@ -4,6 +4,20 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    # These are minimum-version contract fixtures. Newer OpenCode runtimes are
+    # covered by compatibility.yml; raising the minimum requires coordinated
+    # source, integration, notice, and compatibility review.
+    ignore:
+      - dependency-name: "@opencode-ai/plugin"
+        update-types:
+          - "version-update:semver-patch"
+          - "version-update:semver-minor"
+          - "version-update:semver-major"
+      - dependency-name: "@opencode-ai/sdk"
+        update-types:
+          - "version-update:semver-patch"
+          - "version-update:semver-minor"
+          - "version-update:semver-major"
   - package-ecosystem: bun
     directory: /picker
     schedule:

@@ -26,11 +26,66 @@ bun run test
 bun run typecheck
 bun run test:package
 bun run test:opencode
-bun run test:package:native:opencode
 bun run test:picker:rendered
 bun run test:picker-ready
 bun run test:gui:auto
 bun run test:gui
+bun run release:manual-candidate
+bun run release:manual-candidate:test
+bun run release:manual-candidate:test:tui
+```
+
+Run `release:manual-candidate` after the generic tests so no later build can
+silently replace the picker being retained. The command requires a clean
+source candidate equal to `origin/main`, builds the plugin and current host
+picker, and retains one local-host npm tarball under the git-ignored
+`.manual-release/` directory. It prints the exact commit SHA, tarball basename
+and SHA-512 SRI, and picker path and SHA-256 needed below. The two `:test`
+commands run that retained tarball through the same installed-package native
+OpenCode integration; they do not repack it. The automated retained-tarball
+integration currently requires Linux/X11. Run this entire gate on a supported
+Linux host so the candidate prepared there is the same one subsequently tested
+in both live surfaces.
+
+Create one genuinely empty temporary scratch project and install the retained
+tarball into it through OpenCode's supported package installer:
+
+```sh
+manual_scratch="$(mktemp -d -t opencode-model-dispatch-release-XXXXXX)"
+bun run release:manual-candidate:install -- --project "$manual_scratch"
+```
+
+The install helper verifies the recorded commit and both hashes again, starts
+an isolated loopback-only npm registry, asks the local `opencode` executable to
+install the exact `opencode-model-dispatch@<version>` package into the scratch
+project, confirms that registry served the retained tarball, and then stops
+the registry. Provider resolution during the live checks therefore uses the
+operator's normal OpenCode configuration rather than a registry override.
+
+Run the TUI from that directory:
+
+```sh
+cd "$manual_scratch"
+opencode
+```
+
+After the TUI checks, fully quit it. Open the same directory through OpenCode
+Desktop's normal **Open project** action and complete the Desktop checks. Do
+not run the install helper again, change branches, rebuild, repack, or replace
+anything under `.manual-release/` between the two surfaces. Record the scratch
+path below as `<temp>/opencode-model-dispatch-release-XXXXXX`, never as its
+real local path.
+
+To use another retained directory, choose a repository-relative path already
+ignored by Git and pass the same option to every helper invocation:
+
+```sh
+bun run release:manual-candidate -- --output .manual-release/custom
+bun run release:manual-candidate:test -- --output .manual-release/custom
+bun run release:manual-candidate:test:tui -- --output .manual-release/custom
+bun run release:manual-candidate:install -- \
+  --output .manual-release/custom \
+  --project "$manual_scratch"
 ```
 
 ## Checklist
@@ -38,7 +93,7 @@ bun run test:gui
 - [ ] `package.json` has a non-zero version and `v<version>` is the intended release tag.
 - [ ] The tested source commit's full 40-character SHA and npm tarball are recorded below.
 - [ ] `bun run test:package` passes from a clean checkout.
-- [ ] On Linux, `bun run test:package:native:opencode` installs an npm tarball and completes a real OpenCode task through its bundled native picker.
+- [ ] On Linux, `bun run release:manual-candidate:test` installs the retained npm tarball and completes a real OpenCode task through its bundled native picker.
 - [ ] `bun run test:gui` visibly opens the native picker and returns the chosen models.
 - [ ] On Linux, `bun run test:gui:auto` submits the real Tauri window under X11/Xvfb.
 - [ ] `bun run test:picker:rendered` passes its computed-theme, responsive-layout, icon-absence, and keyboard assertions in a local browser.

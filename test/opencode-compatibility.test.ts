@@ -12,6 +12,29 @@ async function readText(path: string): Promise<string> {
 }
 
 describe("OpenCode compatibility policy", () => {
+  test("keeps minimum contract fixtures out of ordinary Dependabot bumps", async () => {
+    const dependabot = await readText(".github/dependabot.yml")
+    const development = await readText("docs/development.md")
+    const ignoredVersionUpdates = [
+      '"version-update:semver-patch"',
+      '"version-update:semver-minor"',
+      '"version-update:semver-major"',
+    ]
+
+    for (const dependency of ["@opencode-ai/plugin", "@opencode-ai/sdk"]) {
+      const start = dependabot.indexOf(`dependency-name: "${dependency}"`)
+      expect(start).toBeGreaterThan(-1)
+      const entry = dependabot.slice(start, start + 260)
+      for (const updateType of ignoredVersionUpdates) {
+        expect(entry).toContain(updateType)
+      }
+    }
+    expect(development).toContain(
+      "must equal the lower bound in `engines.opencode`",
+    )
+    expect(development).toContain("Dependabot security updates remain enabled")
+  })
+
   test("selects the exact minimum and latest patch in each active minor", () => {
     expect(resolveOpenCodeCompatibilityTargets(
       ">=1.18.7 <2",

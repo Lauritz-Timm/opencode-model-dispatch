@@ -460,6 +460,7 @@ jobs:
     environment: release-signing-windows
     permissions:
       actions: read
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -474,12 +475,17 @@ jobs:
         with:
           name: picker-unsigned-windows-${{ matrix.arch }}
           path: ${{ runner.temp }}/unsigned-picker
-      - name: Sign and verify Windows picker
+      - name: Validate Windows signing configuration and unsigned picker
         shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
         env:
+          AZURE_ARTIFACT_SIGNING_ACCOUNT_NAME: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT_NAME }}
+          AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME: ${{ vars.AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME }}
+          AZURE_ARTIFACT_SIGNING_ENDPOINT: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
           EXPECTED_PE_MACHINE: ${{ matrix.expected_machine }}
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          EXPECTED_WINDOWS_SIGNER_SUBJECT: ${{ vars.EXPECTED_WINDOWS_SIGNER_SUBJECT }}
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = "Stop"
@@ -504,10 +510,46 @@ jobs:
           ) {
             throw "Signing must run with the trusted system Windows PowerShell"
           }
-          foreach ($name in @("WINDOWS_CERTIFICATE", "WINDOWS_CERTIFICATE_PASSWORD")) {
+          $required = @(
+            "AZURE_ARTIFACT_SIGNING_ACCOUNT_NAME",
+            "AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME",
+            "AZURE_ARTIFACT_SIGNING_ENDPOINT",
+            "AZURE_CLIENT_ID",
+            "AZURE_SUBSCRIPTION_ID",
+            "AZURE_TENANT_ID",
+            "EXPECTED_WINDOWS_SIGNER_SUBJECT"
+          )
+          foreach ($name in $required) {
             if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
-              throw "Missing required Windows release secret: $name"
+              throw "Missing required Windows release environment variable: $name"
             }
+          }
+          foreach ($name in @("AZURE_CLIENT_ID", "AZURE_SUBSCRIPTION_ID", "AZURE_TENANT_ID")) {
+            $guid = [Guid]::Empty
+            $value = [Environment]::GetEnvironmentVariable($name)
+            if (-not [Guid]::TryParse($value, [ref]$guid) -or $guid -eq [Guid]::Empty) {
+              throw "$name must be a non-zero GUID"
+            }
+          }
+          $endpoint = $null
+          if (
+            -not [Uri]::TryCreate(
+              $env:AZURE_ARTIFACT_SIGNING_ENDPOINT,
+              [UriKind]::Absolute,
+              [ref]$endpoint
+            ) -or
+            $endpoint.Scheme -ne "https" -or
+            -not $endpoint.IsDefaultPort -or
+            -not $endpoint.Host.EndsWith(
+              ".codesigning.azure.net",
+              [StringComparison]::OrdinalIgnoreCase
+            ) -or
+            -not [string]::IsNullOrEmpty($endpoint.UserInfo) -or
+            -not [string]::IsNullOrEmpty($endpoint.Query) -or
+            -not [string]::IsNullOrEmpty($endpoint.Fragment) -or
+            $endpoint.AbsolutePath -ne "/"
+          ) {
+            throw "AZURE_ARTIFACT_SIGNING_ENDPOINT must be a root https://*.codesigning.azure.net endpoint"
           }
 
           $unsignedRoot = [IO.Path]::GetFullPath(
@@ -530,6 +572,13 @@ jobs:
             )
           ) {
             throw "Expected exactly one regular unsigned Windows picker artifact"
+          }
+          $unsignedSignature = Get-AuthenticodeSignature -LiteralPath $picker
+          if (
+            $unsignedSignature.Status -ne
+            [System.Management.Automation.SignatureStatus]::NotSigned
+          ) {
+            throw "Expected an unsigned Windows picker before release signing"
           }
           $expectedMachine = [Convert]::ToUInt16($env:EXPECTED_PE_MACHINE, 16)
           $stream = [IO.File]::OpenRead($picker)
@@ -559,6 +608,113 @@ jobs:
             $reader.Dispose()
           }
 
+      - name: Authenticate to Azure with GitHub OIDC
+        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Sign Windows picker with Azure Artifact Signing
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
+        with:
+          endpoint: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT_NAME }}
+          certificate-profile-name: ${{ vars.AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME }}
+          files: ${{ runner.temp }}\unsigned-picker\picker-windows-${{ matrix.arch }}.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          append-signature: false
+          description: opencode-model-dispatch native model picker
+          description-url: https://github.com/${{ github.repository }}
+          cache-dependencies: false
+          exclude-environment-credential: true
+          exclude-workload-identity-credential: true
+          exclude-managed-identity-credential: true
+          exclude-shared-token-cache-credential: true
+          exclude-visual-studio-credential: true
+          exclude-visual-studio-code-credential: true
+          exclude-azure-cli-credential: false
+          exclude-azure-powershell-credential: true
+          exclude-azure-developer-cli-credential: true
+          exclude-interactive-browser-credential: true
+      - name: Verify signed Windows picker
+        shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
+        env:
+          EXPECTED_PE_MACHINE: ${{ matrix.expected_machine }}
+          EXPECTED_WINDOWS_SIGNER_SUBJECT: ${{ vars.EXPECTED_WINDOWS_SIGNER_SUBJECT }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+          $expectedPowerShell = [IO.Path]::GetFullPath(
+            [IO.Path]::Combine(
+              $env:SystemRoot,
+              "System32",
+              "WindowsPowerShell",
+              "v1.0",
+              "powershell.exe"
+            )
+          )
+          $actualPowerShell = [IO.Path]::GetFullPath(
+            [Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+          )
+          if (
+            -not [string]::Equals(
+              $actualPowerShell,
+              $expectedPowerShell,
+              [StringComparison]::OrdinalIgnoreCase
+            )
+          ) {
+            throw "Signature verification must run with the trusted system Windows PowerShell"
+          }
+          $unsignedRoot = [IO.Path]::GetFullPath(
+            [IO.Path]::Combine($env:RUNNER_TEMP, "unsigned-picker")
+          )
+          $picker = [IO.Path]::Combine(
+            $unsignedRoot,
+            "picker-windows-${{ matrix.arch }}.exe"
+          )
+          $entries = @([IO.Directory]::EnumerateFileSystemEntries($unsignedRoot))
+          $pickerInfo = [IO.FileInfo]::new($picker)
+          if (
+            $entries.Count -ne 1 -or
+            -not $pickerInfo.Exists -or
+            (($pickerInfo.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) -or
+            -not [string]::Equals(
+              [IO.Path]::GetFullPath($entries[0]),
+              $picker,
+              [StringComparison]::OrdinalIgnoreCase
+            )
+          ) {
+            throw "Expected exactly one regular signed Windows picker artifact"
+          }
+          $expectedMachine = [Convert]::ToUInt16($env:EXPECTED_PE_MACHINE, 16)
+          $stream = [IO.File]::OpenRead($picker)
+          $reader = [IO.BinaryReader]::new($stream)
+          try {
+            if ($stream.Length -lt 64 -or $reader.ReadUInt16() -ne 0x5a4d) {
+              throw "Signed Windows picker is not a PE executable"
+            }
+            $stream.Position = 0x3c
+            $peOffset = $reader.ReadUInt32()
+            if ($peOffset -gt $stream.Length - 6) {
+              throw "Signed Windows picker has an invalid PE header offset"
+            }
+            $stream.Position = $peOffset
+            if ($reader.ReadUInt32() -ne 0x00004550) {
+              throw "Signed Windows picker has an invalid PE signature"
+            }
+            $machine = $reader.ReadUInt16()
+            if ($machine -ne $expectedMachine) {
+              throw (
+                "Signed Windows picker has PE machine 0x{0:X4}, expected 0x{1:X4}" -f
+                $machine,
+                $expectedMachine
+              )
+            }
+          } finally {
+            $reader.Dispose()
+          }
           $windowsSdkBin = [IO.Path]::Combine(
             ${env:ProgramFiles(x86)},
             "Windows Kits",
@@ -592,43 +748,24 @@ jobs:
           }
           [Console]::WriteLine("Using SignTool {0} at {1}", $signtoolVersion, $signtoolPath)
 
-          $certificate = [IO.Path]::Combine($env:RUNNER_TEMP, "code-signing.pfx")
-          [IO.File]::WriteAllBytes(
-            $certificate,
-            [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE)
-          )
-          & $signtoolPath sign /fd SHA256 /td SHA256 /tr https://timestamp.digicert.com /f $certificate /p $env:WINDOWS_CERTIFICATE_PASSWORD $picker
+          & $signtoolPath verify /pa /all /v $picker
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & $signtoolPath verify /pa /v $picker
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Remove Windows signing credentials
-        if: always()
-        shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
-        run: |
-          $expectedPowerShell = [IO.Path]::GetFullPath(
-            [IO.Path]::Combine(
-              $env:SystemRoot,
-              "System32",
-              "WindowsPowerShell",
-              "v1.0",
-              "powershell.exe"
-            )
-          )
-          $actualPowerShell = [IO.Path]::GetFullPath(
-            [Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
-          )
+          $signature = Get-AuthenticodeSignature -LiteralPath $picker
+          if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
+            throw "PowerShell reported an invalid Authenticode signature: $($signature.StatusMessage)"
+          }
           if (
+            $null -eq $signature.SignerCertificate -or
             -not [string]::Equals(
-              $actualPowerShell,
-              $expectedPowerShell,
-              [StringComparison]::OrdinalIgnoreCase
+              $signature.SignerCertificate.Subject,
+              $env:EXPECTED_WINDOWS_SIGNER_SUBJECT,
+              [StringComparison]::Ordinal
             )
           ) {
-            throw "Cleanup must run with the trusted system Windows PowerShell"
+            throw "Windows picker signer subject does not match EXPECTED_WINDOWS_SIGNER_SUBJECT"
           }
-          $certificate = [IO.Path]::Combine($env:RUNNER_TEMP, "code-signing.pfx")
-          if ([IO.File]::Exists($certificate)) {
-            [IO.File]::Delete($certificate)
+          if ($null -eq $signature.TimeStamperCertificate) {
+            throw "Windows picker signature is missing its RFC 3161 timestamp"
           }
       - name: Retain canonical signed Windows picker
         if: success()
