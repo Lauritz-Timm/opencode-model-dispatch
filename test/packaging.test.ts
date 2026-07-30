@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { createHash } from "node:crypto"
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -19,6 +20,11 @@ async function readText(path: string): Promise<string> {
 
 async function readJson<T>(path: string): Promise<T> {
   return JSON.parse(await readText(path)) as T
+}
+
+async function sha256(path: string): Promise<string> {
+  const bytes = await Bun.file(new URL(path, root)).arrayBuffer()
+  return createHash("sha256").update(new Uint8Array(bytes)).digest("hex")
 }
 
 type PackageJson = {
@@ -307,8 +313,12 @@ describe("packaging and release assets", () => {
     expect(script).toContain("vite.exe")
   })
 
-  test("Tauri Windows build has the required icon resource", async () => {
-    expect(await Bun.file(new URL("../picker/src-tauri/icons/icon.ico", import.meta.url)).exists()).toBe(true)
+  test("Tauri keeps only transparent compiler-required icon resources", async () => {
+    expect(await sha256("picker/src-tauri/icons/icon.png"))
+      .toBe("ba055962ae121382fb500212d29d0e29e681aa96f691a715cf9fa520a95970ae")
+    expect(await sha256("picker/src-tauri/icons/icon.ico"))
+      .toBe("1698728788d4f5600f8e5561b62b712693224e92339d23150c03d744c014ff19")
+    expect(await Bun.file(new URL("picker/public/assets", root)).exists()).toBe(false)
   })
 
   test("CI validates plugin tests, Node consumers, typecheck, picker build, and packaging checks", async () => {

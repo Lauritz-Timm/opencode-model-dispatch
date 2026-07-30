@@ -20,9 +20,15 @@ describe("picker preview fixtures", () => {
 
   test("picker build uses Vite without the obsolete static build script", async () => {
     const pkg = await readJson<{ scripts?: Record<string, string> }>("picker/package.json")
+    const html = await readText("picker/index.html")
+    const app = await readText("picker/src/App.svelte")
 
     expect(pkg.scripts?.build).toBe("tsc -p tsconfig.json --noEmit && vite build")
     expect(await Bun.file(new URL("picker/scripts/build-static.ts", root)).exists()).toBe(false)
+    expect(html).not.toContain('rel="icon"')
+    expect(html).not.toContain('rel="apple-touch-icon"')
+    expect(html).not.toContain('rel="manifest"')
+    expect(app).not.toContain("app-icon")
   })
 
   test("preview fixture includes realistic model-selection and setup data", async () => {

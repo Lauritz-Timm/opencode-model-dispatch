@@ -401,7 +401,6 @@
   {#if !isPreviewWindow}
     <header class="app-chrome" role="presentation" on:mousedown={startWindowDrag}>
       <div class="chrome-left">
-        <span class="app-icon" aria-hidden="true"></span>
         <span>{windowTitle}</span>
       </div>
       <div class="chrome-controls" role="presentation" on:mousedown|stopPropagation>
@@ -607,16 +606,8 @@
     display: inline-flex;
     align-items: center;
     min-width: 0;
-    gap: 8px;
     font-size: 12px;
     font-weight: 530;
-  }
-
-  .app-icon {
-    width: 14px;
-    height: 14px;
-    border-radius: 3px;
-    background: linear-gradient(90deg, var(--v2-text-text-base) 0 42%, transparent 42% 58%, var(--v2-text-text-base) 58% 100%);
   }
 
   .chrome-controls {

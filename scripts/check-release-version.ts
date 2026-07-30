@@ -105,10 +105,6 @@ async function releaseVersionEntries(): Promise<ReleaseVersionEntry[]> {
       label: "picker/src-tauri/Cargo.lock",
       version: cargoLockPackageVersion(cargoLock, "opencode-model-dispatch-picker"),
     },
-    {
-      label: "picker/public/assets/manifest.json",
-      version: await jsonVersion("picker/public/assets/manifest.json"),
-    },
   ]
 }
 

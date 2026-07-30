@@ -29,7 +29,6 @@ export const REQUIRED_TRACKED_RELEASE_PATHS = [
   "package.json",
   "picker/bun.lock",
   "picker/package.json",
-  "picker/public/assets/manifest.json",
   "picker/src-tauri/Cargo.lock",
   "picker/src-tauri/Cargo.toml",
   "picker/src-tauri/tauri.conf.json",
