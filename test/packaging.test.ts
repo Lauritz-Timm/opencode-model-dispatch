@@ -776,7 +776,7 @@ describe("packaging and release assets", () => {
     }
     expect(stageJob).not.toContain("pattern: picker-*")
     expect(stageJob).toContain(
-      "actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26",
+      "actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d",
     )
     expect(stageJob).toContain("if: steps.draft.outputs.exists != 'true'")
     expect(stageJob).toContain("gh attestation verify")
