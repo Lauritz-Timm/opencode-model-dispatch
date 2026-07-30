@@ -65,14 +65,14 @@ jobs:
           bun scripts/extract-release-notes.ts \
             --output "$release_notes/release-notes.md"
       - name: Retain deterministic legal assets
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-legal-assets
           path: ${{ runner.temp }}/release-legal-assets/*
           if-no-files-found: error
           overwrite: true
       - name: Retain deterministic release notes
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-notes
           path: ${{ runner.temp }}/release-notes/release-notes.md
@@ -168,7 +168,7 @@ jobs:
         run: bun run test:picker-ready
       - name: Retain tested Linux picker
         if: runner.os == 'Linux'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: picker-linux-${{ matrix.arch }}
           path: dist-picker/picker-linux-${{ matrix.arch }}
@@ -176,7 +176,7 @@ jobs:
           overwrite: true
       - name: Retain unsigned macOS picker
         if: runner.os == 'macOS'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: picker-unsigned-macos-arm64
           path: dist-picker/picker-macos-arm64
@@ -184,7 +184,7 @@ jobs:
           overwrite: true
       - name: Retain unsigned Windows picker
         if: runner.os == 'Windows'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: picker-unsigned-windows-${{ matrix.arch }}
           path: dist-picker/picker-windows-${{ matrix.arch }}.exe
@@ -376,7 +376,7 @@ jobs:
             "$RUNNER_TEMP/notary-result.json"
       - name: Retain canonical signed macOS picker
         if: success()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: picker-macos-arm64
           path: ${{ runner.temp }}/unsigned-picker/picker-macos-arm64
@@ -561,7 +561,7 @@ jobs:
           }
       - name: Retain canonical signed Windows picker
         if: success()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: picker-windows-${{ matrix.arch }}
           path: ${{ runner.temp }}/unsigned-picker/picker-windows-${{ matrix.arch }}.exe
@@ -755,14 +755,14 @@ jobs:
           DRAFT_EXISTS: ${{ steps.draft.outputs.exists }}
           GH_TOKEN: ${{ github.token }}
       - name: Retain canonical picker assets for npm and release jobs
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-picker-assets
           path: ${{ runner.temp }}/release-picker-assets/picker-*
           if-no-files-found: error
           overwrite: true
       - name: Retain all canonical GitHub release assets
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-github-assets
           path: ${{ runner.temp }}/release-picker-assets/*
@@ -840,7 +840,7 @@ jobs:
           WEBKIT_DISABLE_COMPOSITING_MODE: "1"
           WEBKIT_DISABLE_DMABUF_RENDERER: "1"
       - name: Retain the exact tested npm tarball
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-npm-package
           path: ${{ steps.package.outputs.tarball }}
