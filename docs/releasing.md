@@ -7,8 +7,9 @@ picker binaries for every supported platform.
 ## Before the Release Candidate
 
 - Update `CHANGELOG.md`.
-- Keep `package.json`, `picker/package.json`, and
-  `picker/src-tauri/Cargo.toml` versions synchronized.
+- Keep `package.json`, `picker/package.json`,
+  `picker/src-tauri/tauri.conf.json`, `picker/src-tauri/Cargo.toml`, and the
+  picker package entry in `picker/src-tauri/Cargo.lock` synchronized.
 - After the rolling OpenCode compatibility workflow passes, update every exact
   runtime version it tested in `docs/compatibility.md` to the release version
   and append newly tested versions. Preserve older rows and archive versions
@@ -17,10 +18,12 @@ picker binaries for every supported platform.
 - Confirm the required repository protections before storing or using signing
   or publishing credentials.
 
-Run the local preflight without privileged tokens:
+After the intended source candidate is merged to `main` and equals
+`origin/main`, run the automated candidate preflight without privileged
+tokens:
 
 ```sh
-bun run release:preflight
+bun run release:candidate-preflight
 ```
 
 Run the public repository check as a separate process:
@@ -45,6 +48,17 @@ commit. Merge it through protected `main`, confirm that the merged commit
 differs from the tested source only by the evidence file, and wait for CI on
 the exact merged SHA. If `main` moves first, rerun the gate from the new
 candidate.
+
+From that clean merged SHA, run the final local pre-tag preflight:
+
+```sh
+bun run release:preflight
+```
+
+Rerun `bun run check:public-repo` from the same exact merged SHA so its
+repository-settings and successful push-CI evidence apply to the commit that
+will be tagged. Revoke the short-lived administration token after this final
+check and before pushing the tag.
 
 ## Tagging
 
@@ -107,7 +121,7 @@ the first release uses a short-lived granular access token:
    bootstrap job and only when the package name itself returns npm `E404`.
 4. Configure npm trusted publishing for
    `Lauritz-Timm/opencode-model-dispatch`, workflow `publish.yml`, with no
-   environment.
+   environment, and select the allowed action `npm publish`.
 5. Revoke the bootstrap token, delete the Actions secret, require 2FA, and
    disallow token publishing.
 

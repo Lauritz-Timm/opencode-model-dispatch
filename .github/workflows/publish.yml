@@ -325,6 +325,8 @@ jobs:
           api_key="$RUNNER_TEMP/notary-api-key.p8"
           archive="$RUNNER_TEMP/picker-macos-arm64.zip"
           notary_result="$RUNNER_TEMP/notary-result.json"
+          notary_log="$RUNNER_TEMP/notary-log.json"
+          notary_validator="$RUNNER_TEMP/validate-notary-log.swift"
           umask 077
           printf '%s' "$APPLE_CERTIFICATE" | /usr/bin/base64 -D > "$certificate"
           printf '%s' "$APPLE_API_PRIVATE_KEY" | /usr/bin/base64 -D > "$api_key"
@@ -356,25 +358,89 @@ jobs:
             --wait \
             --output-format json > "$notary_result"
           /bin/cat "$notary_result"
+          notary_id="$(/usr/bin/plutil -extract id raw -o - "$notary_result")"
+          if ! [[ "$notary_id" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]; then
+            echo "Apple notarization returned an invalid submission ID" >&2
+            exit 1
+          fi
           notary_status="$(/usr/bin/plutil -extract status raw -o - "$notary_result")"
+          /usr/bin/xcrun notarytool log "$notary_id" \
+            --key "$api_key" \
+            --key-id "$APPLE_API_KEY_ID" \
+            --issuer "$APPLE_API_ISSUER_ID" \
+            "$notary_log"
+          /bin/cat "$notary_log"
           if [ "$notary_status" != "Accepted" ]; then
             echo "Apple notarization finished with status: $notary_status" >&2
             exit 1
           fi
+          /bin/cat > "$notary_validator" <<'SWIFT'
+          import Foundation
+
+          func fail(_ message: String) -> Never {
+            FileHandle.standardError.write(Data((message + "\n").utf8))
+            exit(1)
+          }
+
+          guard CommandLine.arguments.count == 2 else {
+            fail("Apple notarization log validator requires one path")
+          }
+
+          do {
+            let data = try Data(
+              contentsOf: URL(fileURLWithPath: CommandLine.arguments[1])
+            )
+            guard let root = try JSONSerialization.jsonObject(with: data)
+              as? [String: Any],
+              root.keys.contains("issues")
+            else {
+              fail("Apple notarization log must be a JSON object with issues")
+            }
+            let issues = root["issues"]!
+            if issues is NSNull {
+              exit(0)
+            }
+            guard let issueList = issues as? [Any], issueList.isEmpty else {
+              fail("Apple notarization log contains issues or warnings")
+            }
+          } catch {
+            fail("Apple notarization log is invalid JSON: \(error)")
+          }
+          SWIFT
+          /usr/bin/xcrun swift "$notary_validator" "$notary_log"
           /usr/bin/codesign --verify --strict --verbose=2 "$picker"
+          assessment_passed=false
+          for attempt in {1..12}; do
+            if /usr/sbin/spctl --assess --type exec --verbose=4 "$picker"; then
+              assessment_passed=true
+              break
+            fi
+            if [ "$attempt" -lt 12 ]; then
+              /bin/sleep 10
+            fi
+          done
+          if [ "$assessment_passed" != "true" ]; then
+            echo "Gatekeeper assessment did not accept the notarized picker" >&2
+            exit 1
+          fi
       - name: Remove Apple signing credentials
         if: always()
         shell: /bin/bash --noprofile --norc -e -o pipefail {0}
         run: |
+          cleanup_status=0
           keychain="$RUNNER_TEMP/model-dispatch.keychain-db"
           if [ -e "$keychain" ]; then
-            /usr/bin/security delete-keychain "$keychain"
+            /usr/bin/security delete-keychain "$keychain" || cleanup_status=$?
           fi
           /bin/rm -f \
             "$RUNNER_TEMP/developer-id.p12" \
             "$RUNNER_TEMP/notary-api-key.p8" \
             "$RUNNER_TEMP/picker-macos-arm64.zip" \
-            "$RUNNER_TEMP/notary-result.json"
+            "$RUNNER_TEMP/notary-result.json" \
+            "$RUNNER_TEMP/notary-log.json" \
+            "$RUNNER_TEMP/validate-notary-log.swift" \
+            || cleanup_status=$?
+          exit "$cleanup_status"
       - name: Retain canonical signed macOS picker
         if: success()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

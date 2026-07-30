@@ -269,6 +269,10 @@ jobs:
           MODEL_DISPATCH_EXPECTED_PICKER_PLATFORM: ${{ matrix.platform }}
           MODEL_DISPATCH_EXPECTED_PICKER_ARCH: ${{ matrix.arch }}
       - run: cargo test --manifest-path picker/src-tauri/Cargo.toml --locked
+      - name: Exercise Apple notarization log policy
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: bash scripts/test-apple-notary-log-validator.sh
       - name: Exercise native picker ready protocol
         run: bun run test:picker-ready
 

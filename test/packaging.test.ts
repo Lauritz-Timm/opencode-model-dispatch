@@ -121,9 +121,12 @@ describe("packaging and release assets", () => {
     expect(pkg.scripts?.["check:release-ci"]).toBe("bun run scripts/check-release-ci.ts")
     expect(pkg.scripts?.["check:release-version"]).toBe("bun run scripts/check-release-version.ts")
     expect(pkg.scripts?.["check:release-package"]).toContain("--require-all-pickers")
-    expect(pkg.scripts?.["release:preflight"]).toContain("check:packaging")
-    expect(pkg.scripts?.["release:preflight"]).not.toContain("check:public-repo")
-    expect(pkg.scripts?.["release:preflight"]).not.toContain("check:release-package")
+    expect(pkg.scripts?.["release:candidate-preflight"]).toContain("check:packaging")
+    expect(pkg.scripts?.["release:candidate-preflight"]).not.toContain("check:public-repo")
+    expect(pkg.scripts?.["release:candidate-preflight"]).not.toContain("check:release-package")
+    expect(pkg.scripts?.["release:preflight"]).toBe(
+      "bun run release:candidate-preflight && bun run check:manual-gate",
+    )
     expect(pkg.scripts?.["release:artifact-preflight"]).toContain("check:release-package")
     expect(pkg.scripts?.prepublishOnly).toContain("check:release-package")
     expect(script).toContain("picker-${platform}-${arch}${ext}")
@@ -491,6 +494,9 @@ describe("packaging and release assets", () => {
 
   test("tagged publish workflow publishes npm package and picker assets", async () => {
     const workflow = await readText(".github/workflows/publish.yml")
+    const notaryValidator = await readText(
+      "scripts/validate-apple-notary-log.swift",
+    )
     const validateJob = workflow.slice(
       workflow.indexOf("\n  validate:"),
       workflow.indexOf("\n  picker-unsigned:"),
@@ -690,6 +696,30 @@ describe("packaging and release assets", () => {
     expect(macosSigningJob).toContain("/usr/bin/security")
     expect(macosSigningJob).toContain("/usr/bin/codesign")
     expect(macosSigningJob).toContain("/usr/bin/xcrun notarytool")
+    expect(macosSigningJob).toContain('notarytool log "$notary_id"')
+    expect(macosSigningJob).toContain(
+      "/usr/sbin/spctl --assess --type exec",
+    )
+    expect(macosSigningJob).toContain("JSONSerialization.jsonObject")
+    expect(macosSigningJob).toContain('root.keys.contains("issues")')
+    expect(macosSigningJob).toContain("issues is NSNull")
+    expect(macosSigningJob).toContain(
+      "let issueList = issues as? [Any], issueList.isEmpty",
+    )
+    expect(macosSigningJob).toContain("notarization log contains issues or warnings")
+    expect(macosSigningJob).toContain(
+      'security delete-keychain "$keychain" || cleanup_status=$?',
+    )
+    expect(macosSigningJob).toContain(
+      '"$RUNNER_TEMP/validate-notary-log.swift"',
+    )
+    expect(macosSigningJob).toContain(
+      notaryValidator
+        .trimEnd()
+        .split("\n")
+        .map((line) => line ? `          ${line}` : "")
+        .join("\n"),
+    )
     expect(macosSigningJob).toContain("secrets.APPLE_CERTIFICATE")
     expect(macosSigningJob).not.toContain("secrets.WINDOWS_CERTIFICATE")
     expect(macosSigningJob.match(/secrets\.APPLE_[A-Z_]+/g)).toHaveLength(7)
@@ -813,6 +843,7 @@ describe("packaging and release assets", () => {
     }
     expect(releasing).toContain("mandatory local pre-tag gate")
     expect(releasing).toMatch(/contains no\s+repository-administration token/)
+    expect(releasing).toContain("allowed action `npm publish`")
     expect(`${readme}\n${releasing}`).not.toContain("REPOSITORY_RULESET_AUDIT_TOKEN")
   })
 })

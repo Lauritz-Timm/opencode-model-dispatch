@@ -10,7 +10,8 @@ real integration suite.
 | OpenCode version | Latest `opencode-model-dispatch` release tested | Verification | Status |
 | --- | --- | --- | --- |
 | `1.18.7` | `0.1.0` | Real dispatch and same-agent FIFO | Rolling minimum |
-| `1.18.9` | `0.1.0` | Real dispatch and same-agent FIFO | Rolling minor latest |
+| `1.18.9` | `0.1.0` | Real dispatch and same-agent FIFO | Archived |
+| `1.18.10` | `0.1.0` | Real dispatch and same-agent FIFO | Rolling minor latest |
 
 Every exact OpenCode version that passes against a release is kept in this
 table. Rows are never removed merely because the rolling window moves. When a

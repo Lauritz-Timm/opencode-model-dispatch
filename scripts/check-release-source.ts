@@ -40,6 +40,8 @@ export const REQUIRED_TRACKED_RELEASE_PATHS = [
   "picker/src-tauri/tauri.conf.json",
   "rust-toolchain.toml",
   "scripts/check-release-ci.ts",
+  "scripts/test-apple-notary-log-validator.sh",
+  "scripts/validate-apple-notary-log.swift",
   "scripts/generate-third-party-notices.ts",
   "scripts/resolve-opencode-compatibility.ts",
   "third-party/RUST_THIRD_PARTY_LICENSES.md",

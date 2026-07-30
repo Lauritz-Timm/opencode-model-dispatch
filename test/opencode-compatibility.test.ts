@@ -157,7 +157,10 @@ describe("OpenCode compatibility policy", () => {
       "| `1.18.7` | `0.1.0` | Real dispatch and same-agent FIFO |",
     )
     expect(documentation).toContain(
-      "| `1.18.9` | `0.1.0` | Real dispatch and same-agent FIFO |",
+      "| `1.18.9` | `0.1.0` | Real dispatch and same-agent FIFO | Archived |",
+    )
+    expect(documentation).toContain(
+      "| `1.18.10` | `0.1.0` | Real dispatch and same-agent FIFO | Rolling minor latest |",
     )
     expect(documentation).toMatch(
       /current\s+supported OpenCode minor line and the five\s+previous lines/,
