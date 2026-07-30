@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report an issue that should be fixed (avoid pasting giant AI generated summaries or your issue may be closed/ignored)
+about: Report a reproducible problem with the plugin
 labels: bug
 ---
 

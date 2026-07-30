@@ -1,0 +1,3 @@
+# package.json "files" is the authoritative npm package allowlist.
+# This explicit policy marker keeps npm-specific exclusions separate from Git;
+# the "bin" allowlist includes generated release pickers even when Git ignores them.

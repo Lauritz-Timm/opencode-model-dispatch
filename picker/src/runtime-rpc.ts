@@ -1,6 +1,6 @@
 import { encodeJsonRpc, type JsonRpcMessage } from "./protocol"
-import type { ModelSelectionSubmitParams } from "./model-selection-reducer"
-import { modelSelectionInputFromPickerRequest, type BackendPickerRequestInput, type PickerRuntimeRequest, type PickerSetupInput, type PickerThemeHint } from "./runtime-request"
+import { MAX_PICKER_RPC_LINE_BYTES, hasUtf8ByteLengthAtMost } from "./runtime-limits"
+import { boundedBackendPickerRequestInput, modelSelectionInputFromPickerRequest, type PickerRuntimeRequest, type PickerSetupInput, type PickerThemeHint } from "./runtime-request"
 
 const PICKER_RPC_EVENT = "picker-rpc-message"
 const WRITE_STDOUT_COMMAND = "write_stdout_line"
@@ -14,18 +14,31 @@ export interface PickerRuntimeAdapterDependencies {
 }
 
 export interface PickerRuntimeAdapter {
-  start: (onStart: (request: PickerRuntimeRequest) => void) => Promise<RuntimeUnlisten>
-  submit: (params: ModelSelectionSubmitParams) => Promise<void>
+  start: (
+    onStart: (request: PickerRuntimeRequest) => void | Promise<void>,
+  ) => Promise<RuntimeUnlisten>
+  submit: (params: unknown) => Promise<void>
   cancel: () => Promise<void>
 }
 
 export function createPickerRuntimeAdapter(dependencies: PickerRuntimeAdapterDependencies): PickerRuntimeAdapter {
   return {
     async start(onStart) {
+      let startHandled = false
       const unlisten = await dependencies.listen(PICKER_RPC_EVENT, (event) => {
+        if (startHandled) return
         if (typeof event.payload !== "string") return
         const request = pickerRuntimeRequestFromLine(event.payload)
-        if (request) onStart(request)
+        if (!request) return
+        startHandled = true
+        void Promise.resolve(onStart(request))
+          .then(() => dependencies.writeStdoutLine(
+            encodeJsonRpc({ jsonrpc: "2.0", method: "started" }).trimEnd(),
+          ))
+          .catch(() => {
+            // Withhold the acknowledgement. The plugin's bounded startup
+            // timeout will terminate a picker that cannot hydrate its request.
+          })
       })
 
       await dependencies.writeStdoutLine(encodeJsonRpc({ jsonrpc: "2.0", method: "ready" }).trimEnd())
@@ -49,6 +62,8 @@ export async function createTauriPickerRuntimeAdapter(): Promise<PickerRuntimeAd
 }
 
 export function pickerRuntimeRequestFromLine(line: string): PickerRuntimeRequest | undefined {
+  if (!hasUtf8ByteLengthAtMost(line, MAX_PICKER_RPC_LINE_BYTES)) return undefined
+
   let message: JsonRpcMessage
   try {
     message = JSON.parse(line) as JsonRpcMessage
@@ -65,21 +80,30 @@ function pickerRuntimeRequestFromStartParams(params: unknown): PickerRuntimeRequ
 
   const theme = readThemeHint(params.theme)
   const setup = readSetup(params)
-  const modelSelection = readModelSelection(params)
+  const hasModelSelection = "catalog" in params || "applyToAllCatalog" in params || "rows" in params
+  const modelSelection = hasModelSelection ? readModelSelection(params) : undefined
+  if (hasModelSelection && !modelSelection) return undefined
   if (!theme && !setup && !modelSelection) return undefined
 
   return { ...(theme ? { theme } : {}), ...(modelSelection ? { modelSelection } : {}), ...(setup ? { setup } : {}) }
 }
 
 function readModelSelection(value: Record<string, unknown>) {
-  if (!Array.isArray(value.catalog) || !Array.isArray(value.applyToAllCatalog) || !Array.isArray(value.rows)) return undefined
-  return modelSelectionInputFromPickerRequest(value as unknown as BackendPickerRequestInput)
+  const request = boundedBackendPickerRequestInput(value)
+  return request ? modelSelectionInputFromPickerRequest(request) : undefined
 }
 
 function readSetup(value: Record<string, unknown>): PickerSetupInput | undefined {
   if (!isRecord(value.settings)) return undefined
   const scope = value.scope === "project" || value.scope === "global" ? value.scope : undefined
-  return { settings: value.settings as unknown as PickerSetupInput["settings"], ...(scope ? { scope } : {}) }
+  const projectIsGitRepo = typeof value.projectIsGitRepo === "boolean" ? value.projectIsGitRepo : undefined
+  const projectConfigIgnored = typeof value.projectConfigIgnored === "boolean" ? value.projectConfigIgnored : undefined
+  return {
+    settings: value.settings as unknown as PickerSetupInput["settings"],
+    ...(scope ? { scope } : {}),
+    ...(projectIsGitRepo === undefined ? {} : { projectIsGitRepo }),
+    ...(projectConfigIgnored === undefined ? {} : { projectConfigIgnored }),
+  }
 }
 
 function readThemeHint(value: unknown): PickerThemeHint | undefined {
@@ -91,5 +115,5 @@ function readThemeHint(value: unknown): PickerThemeHint | undefined {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }

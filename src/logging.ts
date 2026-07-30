@@ -1,4 +1,4 @@
-import type { ModelDispatchSettings } from "./settings"
+import type { ModelDispatchSettings } from "./settings.js"
 
 export const MODEL_DISPATCH_CANCELLED = "MODEL_DISPATCH_CANCELLED"
 export const MODEL_DISPATCH_PICKER_FAILED = "MODEL_DISPATCH_PICKER_FAILED"

@@ -1,6 +1,9 @@
 # 0012 Plugin Hook Wiring: Batched Task Dispatch
 
-Parent: `docs/plan.md`
+Parent: [`PRODUCT.md`](../../PRODUCT.md)
+
+Status: implemented using correlated child-message overrides rather than
+per-call shadow agents.
 
 What to build: Wire batched task dispatch into the plugin hooks so multiple task calls in the same session/debounce window share one picker decision while each call continues independently after selection.
 

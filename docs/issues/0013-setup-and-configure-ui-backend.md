@@ -1,6 +1,6 @@
 # 0013 Setup And Configure UI Backend
 
-Parent: `docs/plan.md`
+Parent: [`PRODUCT.md`](../../PRODUCT.md)
 
 What to build: Implement the backend flow for first-run setup and the user-requested `configure_model_dispatch` tool, reusing picker protocol/setup mode to read, write, snooze, reset, and scope settings.
 

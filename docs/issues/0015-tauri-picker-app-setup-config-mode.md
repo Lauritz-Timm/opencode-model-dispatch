@@ -1,6 +1,6 @@
 # 0015 Tauri Picker App: Setup/Config Mode
 
-Parent: `docs/plan.md`
+Parent: [`PRODUCT.md`](../../PRODUCT.md)
 
 What to build: Extend the Tauri picker app with setup/configuration mode so first-run setup and the `configure_model_dispatch` tool can edit v1 settings, choose config scope, manage privacy, snooze/cancel, and reset defaults.
 

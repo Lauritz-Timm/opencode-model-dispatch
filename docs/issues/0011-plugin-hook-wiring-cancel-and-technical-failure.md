@@ -1,6 +1,6 @@
 # 0011 Plugin Hook Wiring: Cancel And Technical Failure
 
-Parent: `docs/plan.md`
+Parent: [`PRODUCT.md`](../../PRODUCT.md)
 
 What to build: Complete plugin hook failure semantics for user cancel and technical picker failure, including privacy-safe logging, warning paths, and preservation of original task args on fallback.
 

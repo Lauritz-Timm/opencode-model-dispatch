@@ -1,5 +1,7 @@
 # ADR 0004: Shadow Agents for Model Override
 
+Status: superseded by [ADR 0009](./0009-child-message-model-override.md).
+
 ## Context
 
 Built-in `task` does not expose a public `model` argument. It chooses the child

@@ -1,6 +1,6 @@
 # 0007 Batch Coordinator
 
-Parent: `docs/plan.md`
+Parent: [`PRODUCT.md`](../../PRODUCT.md)
 
 What to build: Implement the session-scoped task batching coordinator that groups near-simultaneous task calls, resolves each waiter independently, and preserves fallback/cancel semantics.
 

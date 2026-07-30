@@ -16,13 +16,13 @@ describe("batch coordinator", () => {
 
     scheduled[0]!()
     batcher.resolveBatch("s1", [
-      { callID: "c1", model: { providerID: "anthropic", modelID: "claude" } },
+      { callID: "c1", model: { providerID: "anthropic", modelID: "claude", variant: "high" } },
       { callID: "c2", model: { providerID: "openai", modelID: "gpt" } },
     ])
     scheduled[1]!()
     batcher.resolveBatch("s2", [{ callID: "c3", model: { providerID: "anthropic", modelID: "haiku" } }])
 
-    await expect(first).resolves.toEqual({ kind: "selected", callID: "c1", model: { providerID: "anthropic", modelID: "claude" } })
+    await expect(first).resolves.toEqual({ kind: "selected", callID: "c1", model: { providerID: "anthropic", modelID: "claude", variant: "high" } })
     await expect(second).resolves.toEqual({ kind: "selected", callID: "c2", model: { providerID: "openai", modelID: "gpt" } })
     await expect(otherSession).resolves.toEqual({ kind: "selected", callID: "c3", model: { providerID: "anthropic", modelID: "haiku" } })
   })
@@ -52,5 +52,106 @@ describe("batch coordinator", () => {
     batcher.failBatch("s1", "picker crashed")
 
     await expect(result).resolves.toEqual({ kind: "fallback", callID: "c1", reason: "picker crashed", args: originalArgs })
+  })
+
+  test("fails every ambiguous duplicate call ID closed instead of applying the last selection", async () => {
+    const scheduled: Array<() => void> = []
+    const batcher = new TaskBatcher({ batchMs: 500, schedule: (fn) => scheduled.push(fn) })
+
+    const firstArgs = { subagent_type: "build" }
+    const secondArgs = { subagent_type: "review" }
+    const first = batcher.enqueue({ callID: "duplicate", sessionID: "s1", args: firstArgs })
+    const second = batcher.enqueue({ callID: "duplicate", sessionID: "s1", args: secondArgs })
+
+    scheduled[0]!()
+    batcher.resolveBatch("s1", [
+      { callID: "duplicate", model: { providerID: "anthropic", modelID: "claude" } },
+      { callID: "duplicate", model: { providerID: "openai", modelID: "gpt" } },
+    ])
+
+    await expect(first).resolves.toEqual({
+      kind: "fallback",
+      callID: "duplicate",
+      reason: "invalid or duplicate call ID",
+      args: firstArgs,
+    })
+    await expect(second).resolves.toEqual({
+      kind: "fallback",
+      callID: "duplicate",
+      reason: "invalid or duplicate call ID",
+      args: secondArgs,
+    })
+  })
+
+  test("keeps a duplicate ID poisoned across queued batches until every occurrence settles", async () => {
+    const scheduled: Array<() => void> = []
+    const batcher = new TaskBatcher({ batchMs: 500, schedule: (fn) => scheduled.push(fn) })
+
+    const first = batcher.enqueue({ callID: "duplicate", sessionID: "s1", args: { order: 1 } })
+    scheduled[0]!()
+    const second = batcher.enqueue({ callID: "duplicate", sessionID: "s1", args: { order: 2 } })
+    scheduled[1]!()
+
+    batcher.resolveBatch("s1", [
+      { callID: "duplicate", model: { providerID: "anthropic", modelID: "claude" } },
+    ])
+    await expect(first).resolves.toMatchObject({
+      kind: "fallback",
+      reason: "invalid or duplicate call ID",
+    })
+
+    batcher.resolveBatch("s1", [
+      { callID: "duplicate", model: { providerID: "openai", modelID: "gpt" } },
+    ])
+    await expect(second).resolves.toMatchObject({
+      kind: "fallback",
+      reason: "invalid or duplicate call ID",
+    })
+
+    const reusedAfterSettlement = batcher.enqueue({
+      callID: "duplicate",
+      sessionID: "s1",
+      args: { order: 3 },
+    })
+    scheduled[2]!()
+    batcher.resolveBatch("s1", [
+      { callID: "duplicate", model: { providerID: "openai", modelID: "gpt" } },
+    ])
+    await expect(reusedAfterSettlement).resolves.toEqual({
+      kind: "selected",
+      callID: "duplicate",
+      model: { providerID: "openai", modelID: "gpt" },
+    })
+  })
+
+  test("queues calls arriving after a batch is ready into a separate dispatch", async () => {
+    const scheduled: Array<() => void> = []
+    const ready: Array<{ sessionID: string; calls: Array<{ callID: string }> }> = []
+    const batcher = new TaskBatcher({
+      batchMs: 500,
+      schedule: (fn) => scheduled.push(fn),
+      onReady: (batch) => ready.push(batch),
+    })
+
+    const first = batcher.enqueue({ callID: "c1", sessionID: "s1", args: {} })
+    scheduled[0]!()
+    expect(ready.map((batch) => batch.calls.map((call) => call.callID))).toEqual([["c1"]])
+
+    let lateSettled = false
+    const late = batcher.enqueue({ callID: "c2", sessionID: "s1", args: {} }).then((result) => {
+      lateSettled = true
+      return result
+    })
+    expect(scheduled).toHaveLength(2)
+    scheduled[1]!()
+    expect(ready).toHaveLength(1)
+
+    batcher.resolveBatch("s1", [{ callID: "c1", model: { providerID: "anthropic", modelID: "claude" } }])
+    await expect(first).resolves.toEqual({ kind: "selected", callID: "c1", model: { providerID: "anthropic", modelID: "claude" } })
+    expect(lateSettled).toBe(false)
+    expect(ready.map((batch) => batch.calls.map((call) => call.callID))).toEqual([["c1"], ["c2"]])
+
+    batcher.resolveBatch("s1", [{ callID: "c2", model: { providerID: "openai", modelID: "gpt" } }])
+    await expect(late).resolves.toEqual({ kind: "selected", callID: "c2", model: { providerID: "openai", modelID: "gpt" } })
   })
 })

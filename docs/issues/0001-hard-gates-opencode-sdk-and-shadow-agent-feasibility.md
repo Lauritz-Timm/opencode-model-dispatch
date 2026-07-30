@@ -1,6 +1,8 @@
 # 0001 Hard Gates: OpenCode SDK And Shadow-Agent Feasibility
 
-Parent: `docs/plan.md`
+Parent: [`PRODUCT.md`](../../PRODUCT.md)
+
+Status: historical; the shadow-agent approach was superseded by ADR 0009.
 
 What to build: Prove the critical OpenCode integration assumptions before dependent implementation proceeds: enabled/visible model discovery through stable SDK/API, agent model metadata, parent/current model discovery, shadow-agent display-name invariants, per-call shadow registration timing, task hook mutation safety, and child-session mapping viability.
 

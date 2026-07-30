@@ -1,24 +1,42 @@
+<script context="module" lang="ts">
+  let modelSelectSequence = 0
+</script>
+
 <script lang="ts">
   import { tick } from "svelte"
-  import type { PickerModel } from "./model-selection-reducer"
+  import {
+    modelRefValue,
+    type PickerModel,
+  } from "./model-selection-reducer"
+  import {
+    escapeModelIdentifier,
+    formatModelAccessibleLabel,
+    formatModelIdentity,
+  } from "./model-identity"
 
   export let value = ""
   export let groups: Array<{ providerID: string; providerName: string; models: PickerModel[] }> = []
   export let ariaLabel = "Model"
   export let onChange: (value: string) => void = () => {}
 
+  const instanceID = `model-select-${modelSelectSequence++}`
+  const listboxID = `${instanceID}-listbox`
   let open = false
   let search = ""
   let root: HTMLDivElement
+  let triggerButton: HTMLButtonElement
   let searchInput: HTMLInputElement
+  let activeIndex = 0
+  let openAbove = false
 
   $: selectedModel = groups.flatMap((group) => group.models).find((model) => modelValue(model) === value)
   $: selectedLabel = selectedModel ? selectedModel.displayName : "Select model"
+  $: selectedIdentity = selectedModel ? formatModelIdentity(selectedModel) : ""
   $: filteredGroups = filterGroups(groups, search)
   $: filteredModels = filteredGroups.flatMap((group) => group.models)
 
   function modelValue(model: PickerModel): string {
-    return `${model.providerID}/${model.modelID}`
+    return modelRefValue(model)
   }
 
   function filterGroups(source: typeof groups, query: string) {
@@ -34,21 +52,31 @@
   }
 
   async function openDropdown() {
+    const bounds = root?.getBoundingClientRect()
+    openAbove = Boolean(bounds && window.innerHeight - bounds.bottom < 330 && bounds.top > window.innerHeight - bounds.bottom)
     open = true
     search = ""
+    const selectedIndex = groups.flatMap((group) => group.models).findIndex((model) => modelValue(model) === value)
+    activeIndex = Math.max(0, selectedIndex)
     await tick()
     searchInput?.focus()
   }
 
-  function closeDropdown() {
+  function closeDropdown(restoreTriggerFocus = false) {
     open = false
     search = ""
+    if (restoreTriggerFocus) void tick().then(() => triggerButton?.focus())
+  }
+
+  function handleTriggerClick() {
+    if (open) closeDropdown()
+    else void openDropdown()
   }
 
   function selectModel(nextValue: string) {
     value = nextValue
     onChange(nextValue)
-    closeDropdown()
+    closeDropdown(true)
   }
 
   function handleDocumentPointerDown(event: PointerEvent) {
@@ -57,28 +85,58 @@
   }
 
   function handleKeydown(event: KeyboardEvent) {
-    if (!open) return
+    if (!open) {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault()
+        event.stopPropagation()
+        void openDropdown()
+      }
+      return
+    }
 
     if (event.key === "Escape") {
       event.preventDefault()
       event.stopPropagation()
-      closeDropdown()
+      closeDropdown(true)
+      return
+    }
+
+    if (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Home" || event.key === "End") {
+      event.preventDefault()
+      event.stopPropagation()
+      if (filteredModels.length === 0) return
+      if (event.key === "Home") activeIndex = 0
+      else if (event.key === "End") activeIndex = filteredModels.length - 1
+      else {
+        const delta = event.key === "ArrowDown" ? 1 : -1
+        activeIndex = (activeIndex + delta + filteredModels.length) % filteredModels.length
+      }
+      void tick().then(() => root?.querySelector<HTMLElement>(`[data-option-index="${activeIndex}"]`)?.scrollIntoView({ block: "nearest" }))
       return
     }
 
     if (event.key === "Enter" && filteredModels.length > 0) {
       event.preventDefault()
       event.stopPropagation()
-      selectModel(modelValue(filteredModels[0]!))
+      selectModel(modelValue(filteredModels[Math.min(activeIndex, filteredModels.length - 1)]!))
     }
+  }
+
+  function handleSearchInput() {
+    activeIndex = 0
   }
 </script>
 
 <svelte:document on:pointerdown={handleDocumentPointerDown} />
 
 <div bind:this={root} class="model-select">
-  <button type="button" class="selector-button" aria-label={ariaLabel} aria-haspopup="listbox" aria-expanded={open} on:click={open ? closeDropdown : openDropdown}>
-    <span class="selector-label">{selectedLabel}</span>
+  <button bind:this={triggerButton} type="button" class="selector-button" aria-label={selectedModel ? `${ariaLabel}: ${formatModelAccessibleLabel(selectedModel)}` : ariaLabel} title={selectedModel ? formatModelAccessibleLabel(selectedModel) : undefined} aria-haspopup="listbox" aria-expanded={open} aria-controls={listboxID} on:click={handleTriggerClick} on:keydown={handleKeydown}>
+    <span class="selector-label">
+      <span class="selector-name">{selectedLabel}</span>
+      {#if selectedModel}
+        <span class="model-identity" dir="ltr">{selectedIdentity}</span>
+      {/if}
+    </span>
     <span class="selector-affordances" aria-hidden="true">
       {#if selectedModel}<span class="selector-check">✓</span>{/if}
       <span class="selector-chevron">⌄</span>
@@ -86,23 +144,41 @@
   </button>
 
   {#if open}
-    <div class="model-popover" role="listbox" aria-label={ariaLabel} tabindex="-1" on:keydown={handleKeydown}>
+    <div class="model-popover" class:open-above={openAbove}>
       <div class="search-row">
         <span class="search-icon" aria-hidden="true">⌕</span>
-        <input bind:this={searchInput} bind:value={search} type="search" placeholder="Search models" aria-label="Search models" />
-        <span class="popover-glyphs" aria-hidden="true">
-          <span>+</span>
-          <span>⚙</span>
-        </span>
+        <input
+          bind:this={searchInput}
+          bind:value={search}
+          on:input={handleSearchInput}
+          on:keydown={handleKeydown}
+          type="search"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          aria-controls={listboxID}
+          aria-activedescendant={filteredModels[activeIndex] ? `${listboxID}-option-${activeIndex}` : undefined}
+          placeholder="Search models"
+          aria-label="Search models"
+        />
       </div>
 
-      <div class="model-options">
+      <div id={listboxID} class="model-options" role="listbox" aria-label={ariaLabel}>
         {#each filteredGroups as group}
-          <div class="provider-heading">{group.providerName}</div>
+          <div class="provider-heading" role="presentation">
+            <span>{group.providerName}</span>
+            <span class="identity-separator" aria-hidden="true">·</span>
+            <span class="provider-id" dir="ltr">{escapeModelIdentifier(group.providerID)}</span>
+          </div>
           {#each group.models as model}
             {@const optionValue = modelValue(model)}
-            <button type="button" class="model-option" class:selected={optionValue === value} role="option" aria-selected={optionValue === value} on:click={() => selectModel(optionValue)}>
-              <span>{model.displayName}</span>
+            {@const optionIndex = filteredModels.indexOf(model)}
+            <button id={`${listboxID}-option-${optionIndex}`} data-option-index={optionIndex} type="button" tabindex="-1" class="model-option" class:selected={optionValue === value} class:active={optionIndex === activeIndex} role="option" aria-label={formatModelAccessibleLabel(model)} title={formatModelAccessibleLabel(model)} aria-selected={optionValue === value} on:focus={() => (activeIndex = optionIndex)} on:mouseenter={() => (activeIndex = optionIndex)} on:keydown={handleKeydown} on:click={() => selectModel(optionValue)}>
+              <span class="model-option-copy">
+                <span class="model-option-label">{model.displayName}</span>
+                <span class="model-identity" dir="ltr">{formatModelIdentity(model)}</span>
+              </span>
               {#if optionValue === value}<span class="selected-check" aria-hidden="true">✓</span>{/if}
             </button>
           {/each}
@@ -117,14 +193,16 @@
 <style>
   .model-select {
     position: relative;
-    width: 220px;
-    max-width: 100%;
+    width: 100%;
+    min-width: 0;
   }
 
   .selector-button {
     display: inline-flex;
     width: 100%;
+    height: 30px;
     min-height: 30px;
+    box-sizing: border-box;
     align-items: center;
     justify-content: space-between;
     gap: 8px;
@@ -146,16 +224,46 @@
   }
 
   .selector-button:focus-visible {
-    outline: 1.5px solid var(--v2-border-border-active, var(--opencode-accent));
+    outline: 1.5px solid var(--v2-border-border-focus);
     outline-offset: 1px;
   }
 
   .selector-label {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: baseline;
+    gap: 7px;
+    overflow: hidden;
+    min-width: 0;
+    white-space: nowrap;
+  }
+
+  .selector-name {
+    overflow: hidden;
+    min-width: 0;
+    flex: 1 1 auto;
+    text-overflow: ellipsis;
+    font-weight: 520;
+  }
+
+  .model-identity,
+  .provider-id {
     overflow: hidden;
     min-width: 0;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-weight: 520;
+    direction: ltr;
+    unicode-bidi: isolate;
+    color: var(--v2-text-text-muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10px;
+    font-weight: 450;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+  .selector-label .model-identity {
+    flex: 0 1 45%;
   }
 
   .selector-affordances {
@@ -180,13 +288,19 @@
     position: absolute;
     z-index: 20;
     top: calc(100% + 6px);
-    right: 0;
-    width: min(320px, calc(100vw - 28px));
+    left: 0;
+    width: 100%;
+    box-sizing: border-box;
     overflow: hidden;
     border: 1px solid var(--v2-border-border-base);
     border-radius: 7px;
     background: var(--v2-background-bg-layer-01);
-    box-shadow: 0 12px 32px color-mix(in oklch, var(--opencode-bg), transparent 22%);
+    box-shadow: 0 12px 32px color-mix(in oklch, var(--v2-background-bg-base), transparent 22%);
+  }
+
+  .model-popover.open-above {
+    top: auto;
+    bottom: calc(100% + 6px);
   }
 
   .search-row {
@@ -198,8 +312,7 @@
     background: var(--v2-background-bg-base);
   }
 
-  .search-icon,
-  .popover-glyphs {
+  .search-icon {
     color: var(--v2-text-text-muted);
     font-size: 12px;
   }
@@ -220,11 +333,6 @@
     color: var(--v2-text-text-muted);
   }
 
-  .popover-glyphs {
-    display: inline-flex;
-    gap: 8px;
-  }
-
   .model-options {
     max-height: 290px;
     overflow-y: auto;
@@ -232,12 +340,20 @@
   }
 
   .provider-heading {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 7px;
     padding: 7px 7px 4px;
     color: var(--v2-text-text-muted);
     font-size: 10px;
     font-weight: 620;
     letter-spacing: 0.04em;
     text-transform: uppercase;
+  }
+
+  .provider-heading .provider-id {
+    flex: 0 1 auto;
   }
 
   .model-option {
@@ -259,8 +375,39 @@
     cursor: pointer;
   }
 
+  .model-option-label {
+    overflow: hidden;
+    min-width: 0;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .model-option-copy {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+    flex: 1 1 auto;
+    align-items: stretch;
+    gap: 2px;
+  }
+
+  .model-option-copy .model-option-label {
+    flex: 1 1 auto;
+  }
+
+  .model-option-copy .model-identity {
+    overflow: visible;
+    flex: 0 0 auto;
+    width: 100%;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
   .model-option:hover,
   .model-option:focus-visible,
+  .model-option.active,
   .model-option.selected {
     outline: 0;
     background: var(--v2-background-bg-layer-03);
@@ -275,17 +422,5 @@
     padding: 14px 8px;
     color: var(--v2-text-text-muted);
     font-size: 12px;
-  }
-
-  @media (max-width: 720px) {
-    .model-select {
-      width: 100%;
-    }
-
-    .model-popover {
-      right: auto;
-      left: 0;
-      width: min(320px, 100%);
-    }
   }
 </style>

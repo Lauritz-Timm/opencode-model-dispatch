@@ -5,8 +5,7 @@ import { DEFAULT_SETTINGS, type ModelDispatchSettings } from "../../src/settings
 import type { PluginLogEntry } from "../../src/logging"
 
 describe("e2e plugin dispatch flow", () => {
-  test("batches parallel task calls, creates shadow agents, maps child sessions, and cleans up", async () => {
-    const cache = new E2EShadowCache()
+  test("batches parallel task calls and applies models to real child-message hooks without changing agent identity", async () => {
     const logEntries: PluginLogEntry[] = []
     const pickerRequests: PickerRequest[] = []
     const settings: ModelDispatchSettings = {
@@ -15,8 +14,8 @@ describe("e2e plugin dispatch flow", () => {
     }
     const plugin = createModelDispatchPlugin({
       readSettings: async () => ({ settings, warnings: [] }),
+      shouldOpenFirstRunSetup: async () => false,
       logger: { info: (entry) => logEntries.push(entry), error: (entry) => logEntries.push(entry) },
-      cache,
       scheduleBatch: (fn) => queueMicrotask(fn),
       launchPicker: async (request) => {
         pickerRequests.push(request)
@@ -45,23 +44,26 @@ describe("e2e plugin dispatch flow", () => {
       ["call-build", "builder", "claude-3-5-sonnet"],
       ["call-review", "reviewer", "gpt-4o"],
     ])
-    expect(build.args.subagent_type).toMatch(/^model-dispatch-builder-/)
-    expect(review.args.subagent_type).toMatch(/^model-dispatch-reviewer-/)
+    expect(JSON.stringify(pickerRequests)).not.toContain("do not leak")
+    expect(build.args.subagent_type).toBe("builder")
+    expect(review.args.subagent_type).toBe("reviewer")
     expect(build.args.prompt).toBe("do not leak this prompt")
     expect(review.args.description).toBe("do not leak this description")
 
-    const config: { agent?: Record<string, unknown> } = {}
-    await hooks.config!(config)
-    expect(Object.keys(config.agent ?? {})).toHaveLength(2)
-    expect(Object.values(config.agent ?? {}).map((agent) => (agent as { name: string }).name).sort()).toEqual(["builder", "reviewer"])
+    const buildMessage = { message: { model: { providerID: "default", modelID: "default" } }, parts: [] }
+    const reviewMessage = { message: { model: { providerID: "default", modelID: "default" } }, parts: [] }
+    await Promise.all([
+      hooks["chat.message"]!({ sessionID: "child-build", agent: "builder" }, buildMessage as never),
+      hooks["chat.message"]!({ sessionID: "child-review", agent: "reviewer" }, reviewMessage as never),
+    ])
+    expect(buildMessage.message.model).toEqual({ providerID: "anthropic", modelID: "claude-3-5-sonnet" })
+    expect(reviewMessage.message.model).toEqual({ providerID: "openai", modelID: "gpt-4o" })
 
-    await hooks["tool.execute.after"]!({ tool: "task", sessionID: "parent", callID: "call-build", args: build.args }, { metadata: { sessionID: "child-build" } })
-    await hooks.event!({ event: { session: { id: "child-build", time: { archived: Date.now() } } } })
+    const taskOutput = { metadata: { sessionID: "child-build", model: { providerID: "default", modelID: "default" } } }
+    await hooks["tool.execute.after"]!({ tool: "task", sessionID: "parent", callID: "call-build", args: build.args }, taskOutput as never)
+    expect(taskOutput.metadata.model).toEqual({ providerID: "anthropic", modelID: "claude-3-5-sonnet" })
     await hooks.dispose!()
 
-    expect(cache.childSessions.get(cache.calls.get("call-build") ?? "")).toBe("child-build")
-    expect(cache.archivedSessions).toEqual(["child-build"])
-    expect(cache.disposed).toBe(true)
     expect(JSON.stringify(logEntries)).not.toContain("do not leak")
     expect(logEntries).toEqual([expect.objectContaining({ event: "model_dispatch_success", selectedCount: 2 })])
   })
@@ -71,23 +73,19 @@ describe("e2e plugin dispatch flow", () => {
     await expect(cancelHarness.hooks["tool.execute.before"]!({ tool: "task", sessionID: "parent", callID: "call-cancel" }, { args: { subagent_type: "builder" } })).rejects.toThrow(
       "Model selection cancelled",
     )
-    expect(cancelHarness.cache.calls.size).toBe(0)
     expect(cancelHarness.logEntries).toEqual([expect.objectContaining({ code: "MODEL_DISPATCH_CANCELLED" })])
 
     const failureHarness = await createHarness({ kind: "technical_failure", reason: "picker exited" })
-    const output: { args: Record<string, unknown>; warnings?: string[] } = { args: { subagent_type: "builder", prompt: "still private" } }
+    const output = { args: { subagent_type: "builder", prompt: "still private" } }
     await failureHarness.hooks["tool.execute.before"]!({ tool: "task", sessionID: "parent", callID: "call-fail" }, output)
 
     expect(output.args).toEqual({ subagent_type: "builder", prompt: "still private" })
-    expect(output.warnings).toEqual(["Model dispatch picker failed; using the configured fallback model."])
-    expect(failureHarness.cache.calls.size).toBe(0)
     expect(JSON.stringify(failureHarness.logEntries)).not.toContain("still private")
     expect(failureHarness.logEntries).toEqual([expect.objectContaining({ code: "MODEL_DISPATCH_PICKER_FAILED" })])
   })
 })
 
 async function createHarness(decision: { kind: "cancel" } | { kind: "technical_failure"; reason: string }) {
-  const cache = new E2EShadowCache()
   const logEntries: PluginLogEntry[] = []
   const settings: ModelDispatchSettings = {
     ...DEFAULT_SETTINGS,
@@ -95,12 +93,12 @@ async function createHarness(decision: { kind: "cancel" } | { kind: "technical_f
   }
   const plugin = createModelDispatchPlugin({
     readSettings: async () => ({ settings, warnings: [] }),
+    shouldOpenFirstRunSetup: async () => false,
     logger: { info: (entry) => logEntries.push(entry), error: (entry) => logEntries.push(entry) },
-    cache,
     scheduleBatch: (fn) => queueMicrotask(fn),
     launchPicker: async () => decision,
   })
-  return { hooks: await plugin({ client: fakeClient(), directory: "C:/scratch" } as never), cache, logEntries }
+  return { hooks: await plugin({ client: fakeClient(), directory: "C:/scratch" } as never), logEntries }
 }
 
 function fakeClient() {
@@ -124,31 +122,12 @@ function fakeClient() {
     },
     session: {
       messages: async () => [{ role: "assistant", metadata: { model: { providerID: "anthropic", modelID: "claude-3-5-sonnet" } } }],
+      get: async (options: { path: { id: string } }) => ({
+        data: { id: options.path.id, parentID: options.path.id.startsWith("child-") ? "parent" : undefined },
+      }),
     },
-  }
-}
-
-class E2EShadowCache {
-  readonly calls = new Map<string, string>()
-  readonly childSessions = new Map<string, string>()
-  readonly archivedSessions: string[] = []
-  disposed = false
-
-  async recordBeforeTask(callID: string, shadowKey: string) {
-    this.calls.set(callID, shadowKey)
-  }
-
-  async recordAfterTask(callID: string, metadata: { sessionID?: string; childSessionID?: string; session?: { id?: string } }) {
-    const shadowKey = this.calls.get(callID)
-    const childSessionID = metadata.childSessionID ?? metadata.sessionID ?? metadata.session?.id
-    if (shadowKey && childSessionID) this.childSessions.set(shadowKey, childSessionID)
-  }
-
-  async handleSessionUpdated(session: { id: string; time?: { archived?: number } }) {
-    if (session.time?.archived) this.archivedSessions.push(session.id)
-  }
-
-  async dispose() {
-    this.disposed = true
+    tui: {
+      showToast: async () => ({ data: true }),
+    },
   }
 }
