@@ -18,16 +18,17 @@ jobs:
     name: Validate release source
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.3.14
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
+          package-manager-cache: false
       - name: Verify exact release SHA passed push CI
         run: bun run check:release-ci
         env:
@@ -65,14 +66,14 @@ jobs:
           bun scripts/extract-release-notes.ts \
             --output "$release_notes/release-notes.md"
       - name: Retain deterministic legal assets
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-legal-assets
           path: ${{ runner.temp }}/release-legal-assets/*
           if-no-files-found: error
           overwrite: true
       - name: Retain deterministic release notes
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-notes
           path: ${{ runner.temp }}/release-notes/release-notes.md
@@ -116,7 +117,7 @@ jobs:
             arch: arm64
             runner: windows-11-arm
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Install Linux Tauri prerequisites
@@ -128,9 +129,10 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.3.14
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
+          package-manager-cache: false
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.97.1 --profile minimal --no-self-update
       - run: bun install --frozen-lockfile
@@ -168,7 +170,7 @@ jobs:
         run: bun run test:picker-ready
       - name: Retain tested Linux picker
         if: runner.os == 'Linux'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: picker-linux-${{ matrix.arch }}
           path: dist-picker/picker-linux-${{ matrix.arch }}
@@ -176,7 +178,7 @@ jobs:
           overwrite: true
       - name: Retain unsigned macOS picker
         if: runner.os == 'macOS'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: picker-unsigned-macos-arm64
           path: dist-picker/picker-macos-arm64
@@ -184,7 +186,7 @@ jobs:
           overwrite: true
       - name: Retain unsigned Windows picker
         if: runner.os == 'Windows'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: picker-unsigned-windows-${{ matrix.arch }}
           path: dist-picker/picker-windows-${{ matrix.arch }}.exe
@@ -211,7 +213,7 @@ jobs:
             expected_uname: aarch64
             expected_machine: "AArch64"
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Install Linux runtime prerequisites
@@ -221,12 +223,13 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.3.14
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
+          package-manager-cache: false
       - run: bun install --frozen-lockfile
       - name: Download exact first-party picker artifact
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: picker-linux-${{ matrix.arch }}
           path: dist-picker
@@ -281,7 +284,7 @@ jobs:
       actions: read
     steps:
       - name: Download exact unsigned macOS picker
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: picker-unsigned-macos-arm64
           path: ${{ runner.temp }}/unsigned-picker
@@ -443,7 +446,7 @@ jobs:
           exit "$cleanup_status"
       - name: Retain canonical signed macOS picker
         if: success()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: picker-macos-arm64
           path: ${{ runner.temp }}/unsigned-picker/picker-macos-arm64
@@ -467,7 +470,7 @@ jobs:
             expected_machine: "AA64"
     steps:
       - name: Download exact unsigned Windows picker
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: picker-unsigned-windows-${{ matrix.arch }}
           path: ${{ runner.temp }}/unsigned-picker
@@ -629,7 +632,7 @@ jobs:
           }
       - name: Retain canonical signed Windows picker
         if: success()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: picker-windows-${{ matrix.arch }}
           path: ${{ runner.temp }}/unsigned-picker/picker-windows-${{ matrix.arch }}.exe
@@ -647,31 +650,31 @@ jobs:
       artifact-metadata: write
     steps:
       - name: Download exact tested Linux x64 picker
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: picker-linux-x64
           path: dist-picker
       - name: Download exact tested Linux ARM64 picker
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: picker-linux-arm64
           path: dist-picker
       - name: Download exact signed macOS picker
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: picker-macos-arm64
           path: dist-picker
       - name: Download exact signed Windows x64 picker
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: picker-windows-x64
           path: dist-picker
       - name: Download exact signed Windows ARM64 picker
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: picker-windows-arm64
           path: dist-picker
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-legal-assets
           path: release-legal-assets
@@ -823,14 +826,14 @@ jobs:
           DRAFT_EXISTS: ${{ steps.draft.outputs.exists }}
           GH_TOKEN: ${{ github.token }}
       - name: Retain canonical picker assets for npm and release jobs
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-picker-assets
           path: ${{ runner.temp }}/release-picker-assets/picker-*
           if-no-files-found: error
           overwrite: true
       - name: Retain all canonical GitHub release assets
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-github-assets
           path: ${{ runner.temp }}/release-picker-assets/*
@@ -849,7 +852,7 @@ jobs:
     env:
       RELEASE_TAG: ${{ github.ref_name }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Install Linux picker runtime and GUI automation
@@ -859,10 +862,11 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.3.14
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22.14.0
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+          package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-picker-assets
           path: bin
@@ -908,7 +912,7 @@ jobs:
           WEBKIT_DISABLE_COMPOSITING_MODE: "1"
           WEBKIT_DISABLE_DMABUF_RENDERER: "1"
       - name: Retain the exact tested npm tarball
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-npm-package
           path: ${{ steps.package.outputs.tarball }}
@@ -938,7 +942,7 @@ jobs:
             arch: arm64
             runner: windows-11-arm
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Install Linux picker runtime
@@ -949,7 +953,7 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.3.14
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-npm-package
           path: ${{ runner.temp }}/npm-package
@@ -982,10 +986,11 @@ jobs:
     env:
       RELEASE_TAG: ${{ github.ref_name }}
     steps:
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22.14.0
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+          package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-npm-package
           path: ${{ runner.temp }}/npm-package
@@ -1121,10 +1126,11 @@ jobs:
     env:
       RELEASE_TAG: ${{ github.ref_name }}
     steps:
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22.14.0
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+          package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-npm-package
           path: ${{ runner.temp }}/npm-package
@@ -1220,10 +1226,11 @@ jobs:
     env:
       RELEASE_TAG: ${{ github.ref_name }}
     steps:
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22.14.0
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+          package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-npm-package
           path: ${{ runner.temp }}/npm-package
@@ -1318,16 +1325,17 @@ jobs:
     env:
       RELEASE_TAG: ${{ github.ref_name }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.3.14
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22.14.0
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+          package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-npm-package
           path: ${{ runner.temp }}/npm-package
@@ -1454,7 +1462,7 @@ jobs:
     needs: validate
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -1471,11 +1479,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-github-assets
           path: expected-release
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-notes
           path: release-notes
