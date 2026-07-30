@@ -72,7 +72,7 @@ describe("packaging and release assets", () => {
     expect(pkg.scripts?.prepare).toBeUndefined()
     expect(pkg.scripts?.prepublishOnly).not.toContain("tauri")
     expect(pkg.files).toContain("dist")
-    expect(pkg.files).toContain("assets")
+    expect(pkg.files).not.toContain("assets")
     expect(pkg.files).toContain("bin")
     expect(pkg.files).not.toContain("scripts")
     expect(pkg.files).toContain("THIRD_PARTY_NOTICES.md")

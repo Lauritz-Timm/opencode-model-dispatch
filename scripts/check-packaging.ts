@@ -306,7 +306,6 @@ async function main(): Promise<void> {
     process.env.REQUIRE_ALL_PICKERS === "1"
 
   expectIncludes(failures, pkg.files, "dist", "package files")
-  expectIncludes(failures, pkg.files, "assets", "package files")
   expectIncludes(failures, pkg.files, "bin", "package files")
   expectIncludes(
     failures,

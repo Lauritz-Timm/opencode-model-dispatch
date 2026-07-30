@@ -252,7 +252,7 @@ async function stagePackage(nativeAsset: string): Promise<void> {
   ]) {
     await cp(join(root, path), join(packageStage, path))
   }
-  for (const path of ["dist", "assets", "bin"]) {
+  for (const path of ["dist", "bin"]) {
     await cp(join(root, path), join(packageStage, path), {
       recursive: true,
       force: true,

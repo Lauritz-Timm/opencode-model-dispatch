@@ -42,7 +42,6 @@
   },
   "files": [
     "dist",
-    "assets",
     "bin",
     "THIRD_PARTY_NOTICES.md",
     "README.md",

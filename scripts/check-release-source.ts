@@ -23,7 +23,6 @@ export const REQUIRED_TRACKED_RELEASE_PATHS = [
   "README.md",
   "SECURITY.md",
   "THIRD_PARTY_NOTICES.md",
-  "assets/manifest.json",
   "bin/picker.js",
   "bun.lock",
   "docs/manual-integration-gate.md",

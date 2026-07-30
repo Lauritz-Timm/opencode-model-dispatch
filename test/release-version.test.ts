@@ -14,7 +14,6 @@ function entries(version = "0.1.0"): ReleaseVersionEntry[] {
     { label: "picker/src-tauri/tauri.conf.json", version },
     { label: "picker/src-tauri/Cargo.toml", version },
     { label: "picker/src-tauri/Cargo.lock", version },
-    { label: "assets/manifest.json", version },
     { label: "picker/public/assets/manifest.json", version },
   ]
 }
