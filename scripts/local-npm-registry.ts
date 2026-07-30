@@ -1,8 +1,10 @@
-import { access, mkdir, readFile, readdir } from "node:fs/promises"
+import { access, mkdir, readFile, readdir, rm } from "node:fs/promises"
 import { constants } from "node:fs"
 import { createHash } from "node:crypto"
 import { createServer } from "node:net"
 import { join } from "node:path"
+
+import { stageLifecycleNeutralPackage } from "./local-npm-pack"
 
 export interface LocalRegistryDependency {
   name: string
@@ -204,8 +206,12 @@ async function collectLocalDependencyGraph(
 ): Promise<void> {
   const queue = [...initialDependencies]
   const packRoot = join(work, "local-registry-pack")
+  const stageRoot = join(work, "local-registry-stage")
   const npmCache = join(work, "local-registry-npm-cache")
-  await mkdir(packRoot, { recursive: true })
+  await Promise.all([
+    mkdir(packRoot, { recursive: true }),
+    mkdir(stageRoot, { recursive: true }),
+  ])
 
   while (queue.length) {
     const dependency = queue.shift()!
@@ -231,49 +237,60 @@ async function collectLocalDependencyGraph(
       `Local dependency ${name} has unexpected installed metadata`,
     )
 
-    const existingTarballs = new Set(await readdir(packRoot))
-    const child = Bun.spawn(
-      [
-        "npm",
-        "pack",
-        "--silent",
-        "--ignore-scripts",
-        "--pack-destination",
-        packRoot,
-        packageRoot,
-      ],
-      {
-        cwd: root,
-        env: {
-          ...process.env,
-          npm_config_cache: npmCache,
-        },
-        stdout: "pipe",
-        stderr: "pipe",
-      },
+    const stagedPackageRoot = await stageLifecycleNeutralPackage(
+      packageRoot,
+      stageRoot,
+      manifest,
     )
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ])
-    if (code !== 0) {
-      throw new Error(
-        `Could not pack locked local registry dependency ${name}: ${stderr || stdout}`,
-      )
-    }
-    const packedTarballs = (await readdir(packRoot)).filter(
-      (filename) =>
-        filename.endsWith(".tgz") && !existingTarballs.has(filename),
-    )
-    assert(
-      packedTarballs.length === 1,
-      `npm pack produced ${packedTarballs.length} new tarballs for ${name}: ${stdout}`,
-    )
-    const filename = packedTarballs[0]!
+    const tarball = await (async () => {
+      try {
+        const existingTarballs = new Set(await readdir(packRoot))
+        const child = Bun.spawn(
+          [
+            "npm",
+            "pack",
+            "--silent",
+            "--ignore-scripts",
+            "--pack-destination",
+            packRoot,
+            stagedPackageRoot,
+          ],
+          {
+            cwd: root,
+            env: {
+              ...process.env,
+              npm_config_cache: npmCache,
+            },
+            stdout: "pipe",
+            stderr: "pipe",
+          },
+        )
+        const [stdout, stderr, code] = await Promise.all([
+          new Response(child.stdout).text(),
+          new Response(child.stderr).text(),
+          child.exited,
+        ])
+        if (code !== 0) {
+          throw new Error(
+            `Could not pack locked local registry dependency ${name}: ${stderr || stdout}`,
+          )
+        }
+        const packedTarballs = (await readdir(packRoot)).filter(
+          (filename) =>
+            filename.endsWith(".tgz") && !existingTarballs.has(filename),
+        )
+        assert(
+          packedTarballs.length === 1,
+          `npm pack produced ${packedTarballs.length} new tarballs for ${name}: ${stdout}`,
+        )
+        return readFile(join(packRoot, packedTarballs[0]!))
+      } finally {
+        await rm(stagedPackageRoot, { recursive: true, force: true })
+      }
+    })()
     packages.set(
       name,
-      registryPackage(manifest, await readFile(join(packRoot, filename))),
+      registryPackage(manifest, tarball),
     )
     queue.push(...dependencyEntries(manifest))
   }
